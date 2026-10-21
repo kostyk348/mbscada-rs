@@ -1,0 +1,9 @@
+[package]
+name = "mb-sim"
+description = "In-memory Modbus slave simulator (for tests and offline demos)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mb-proto = { path = "../mb-proto" }

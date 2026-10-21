@@ -1,0 +1,8 @@
+[package]
+name = "mb-format"
+description = "Parser/writer for Modbus Poll project files (.mbp tables, .mbw workspaces)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

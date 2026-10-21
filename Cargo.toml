@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mb-format",
+    "crates/mb-proto",
+    "crates/mb-sim",
+    "crates/mb-engine",
+    "apps/mbscada/src-tauri",
+]
+default-members = [
+    "crates/mb-format",
+    "crates/mb-proto",
+    "crates/mb-sim",
+    "crates/mb-engine",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Konstantin"]
+
+[workspace.dependencies]
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1

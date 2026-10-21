@@ -1,0 +1,15 @@
+[package]
+name = "mb-engine"
+description = "Polling engine (Modbus Poll style), transports (TCP/RTU/RTU-over-TCP), formats, rules, alarms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mb-proto = { path = "../mb-proto" }
+mb-format = { path = "../mb-format" }
+serde = { version = "1", features = ["derive"] }
+serialport = "4"
+
+[dev-dependencies]
+mb-sim = { path = "../mb-sim" }

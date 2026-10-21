@@ -1,0 +1,8 @@
+[package]
+name = "mb-proto"
+description = "Dependency-free Modbus PDU / MBAP / RTU implementation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

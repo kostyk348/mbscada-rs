@@ -1,0 +1,647 @@
+//! Multi-poll engine: one thread per connection, independent scan rates,
+//! live row values, hi/hi-hi/lo/lo-lo alarms, styling rules, stats and a
+//! communication log. Mirrors Modbus Poll's behaviour.
+
+use crate::format::{decode, display, Fmt};
+use crate::model::{func_is_read, Connection, Poll};
+use crate::rules::{self, Rule, Severity};
+use crate::transport::{open_transport, Transport};
+use mb_proto::error::ProtoError;
+use mb_proto::{decode_response, Request, Response};
+use serde::Serialize;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+// ------------------------------------------------------------------ views
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ConnStats {
+    pub tx: u64,
+    pub rx: u64,
+    pub errors: u64,
+    pub timeouts: u64,
+    pub last_ms: f64,
+    pub avg_ms: f64,
+    pub online: bool,
+    pub last_error: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnView {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub describe: String,
+    pub stats: ConnStats,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RowView {
+    pub addr: u16,
+    pub disp_addr: String,
+    pub name: String,
+    pub raw: u16,
+    pub value: f64,
+    pub display: String,
+    pub unit: String,
+    pub quality: String, // good | bad | off
+    pub alarm_level: String,
+    pub alarm_msg: String,
+    pub fg: Option<String>,
+    pub bg: Option<String>,
+    pub blink: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollView {
+    pub id: u32,
+    pub name: String,
+    pub conn_id: String,
+    pub func: u8,
+    pub slave: u8,
+    pub start: u16,
+    pub qty: u16,
+    pub scan_ms: u64,
+    pub fmt: Fmt,
+    pub enabled: bool,
+    pub last_poll_ms: f64,
+    pub rows: Vec<RowView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CommEntry {
+    pub time: String,
+    pub conn: String,
+    pub dir: String,
+    pub text: String,
+    pub ok: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Snapshot {
+    pub running: bool,
+    pub connections: Vec<ConnView>,
+    pub polls: Vec<PollView>,
+    pub log: Vec<CommEntry>,
+    pub ts_ms: u128,
+}
+
+// ------------------------------------------------------------------ inner
+
+enum Command {
+    Write {
+        poll_id: u32,
+        addr: u16,
+        value: u16,
+        multi: bool,
+        values: Vec<u16>,
+    },
+}
+
+struct Inner {
+    connections: HashMap<String, Connection>,
+    polls: Vec<Poll>,
+    rules: Vec<Rule>,
+    rows: HashMap<u32, Vec<RowView>>,
+    stats: HashMap<String, ConnStats>,
+    poll_ms: HashMap<u32, f64>,
+    log: VecDeque<CommEntry>,
+    cmds: HashMap<String, Sender<Command>>,
+    running: bool,
+}
+
+pub struct Engine {
+    inner: Arc<Mutex<Inner>>,
+    stop: Arc<AtomicBool>,
+    handles: Vec<JoinHandle<()>>,
+}
+
+fn now_hms() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        % 86400;
+    format!("{:02}:{:02}:{:02}", secs / 3600, (secs % 3600) / 60, secs % 60)
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+impl Engine {
+    pub fn start(connections: Vec<Connection>, polls: Vec<Poll>, rules: Vec<Rule>) -> Engine {
+        let mut conn_map = HashMap::new();
+        for c in connections {
+            conn_map.insert(c.id.clone(), c);
+        }
+        let mut stats = HashMap::new();
+        for id in conn_map.keys() {
+            stats.insert(id.clone(), ConnStats::default());
+        }
+        let inner = Arc::new(Mutex::new(Inner {
+            connections: conn_map,
+            polls,
+            rules,
+            rows: HashMap::new(),
+            stats,
+            poll_ms: HashMap::new(),
+            log: VecDeque::new(),
+            cmds: HashMap::new(),
+            running: true,
+        }));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let mut conn_ids: Vec<String> = {
+            let g = inner.lock().unwrap();
+            g.polls.iter().map(|p| p.conn_id.clone()).collect()
+        };
+        conn_ids.sort();
+        conn_ids.dedup();
+
+        let mut handles = Vec::new();
+        for cid in conn_ids {
+            let (tx, rx) = channel::<Command>();
+            inner.lock().unwrap().cmds.insert(cid.clone(), tx);
+            let i2 = Arc::clone(&inner);
+            let s2 = Arc::clone(&stop);
+            handles.push(thread::spawn(move || conn_loop(i2, s2, cid, rx)));
+        }
+        Engine {
+            inner,
+            stop,
+            handles,
+        }
+    }
+
+    pub fn set_rules(&self, rules: Vec<Rule>) {
+        if let Ok(mut g) = self.inner.lock() {
+            g.rules = rules;
+        }
+    }
+
+    pub fn rules(&self) -> Vec<Rule> {
+        self.inner.lock().map(|g| g.rules.clone()).unwrap_or_default()
+    }
+
+    pub fn write(&self, poll_id: u32, addr: u16, value: u16) -> Result<(), String> {
+        self.send_write(poll_id, addr, value, false, vec![])
+    }
+
+    pub fn write_multi(&self, poll_id: u32, addr: u16, values: Vec<u16>) -> Result<(), String> {
+        self.send_write(poll_id, addr, 0, true, values)
+    }
+
+    fn send_write(
+        &self,
+        poll_id: u32,
+        addr: u16,
+        value: u16,
+        multi: bool,
+        values: Vec<u16>,
+    ) -> Result<(), String> {
+        let g = self.inner.lock().map_err(|_| "lock".to_string())?;
+        let poll = g
+            .polls
+            .iter()
+            .find(|p| p.id == poll_id)
+            .ok_or("no such poll")?;
+        let tx = g.cmds.get(&poll.conn_id).ok_or("no connection")?;
+        tx.send(Command::Write {
+            poll_id,
+            addr,
+            value,
+            multi,
+            values,
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        let g = match self.inner.lock() {
+            Ok(g) => g,
+            Err(_) => return Snapshot::empty(),
+        };
+        let connections = g
+            .connections
+            .values()
+            .map(|c| ConnView {
+                id: c.id.clone(),
+                name: c.name.clone(),
+                kind: format!("{:?}", c.kind).to_lowercase(),
+                describe: c.describe(),
+                stats: g.stats.get(&c.id).cloned().unwrap_or_default(),
+            })
+            .collect();
+
+        let polls = g
+            .polls
+            .iter()
+            .map(|p| PollView {
+                id: p.id,
+                name: p.name.clone(),
+                conn_id: p.conn_id.clone(),
+                func: p.func,
+                slave: p.slave,
+                start: p.start,
+                qty: p.qty,
+                scan_ms: p.scan_ms,
+                fmt: p.fmt,
+                enabled: p.enabled,
+                last_poll_ms: g.poll_ms.get(&p.id).copied().unwrap_or(0.0),
+                rows: g.rows.get(&p.id).cloned().unwrap_or_default(),
+            })
+            .collect();
+
+        Snapshot {
+            running: g.running,
+            connections,
+            polls,
+            log: g.log.iter().cloned().collect(),
+            ts_ms: now_ms(),
+        }
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Ok(mut g) = self.inner.lock() {
+            g.running = false;
+        }
+        for h in self.handles.drain(..) {
+            let _ = h.join();
+        }
+    }
+}
+
+impl Snapshot {
+    pub fn empty() -> Snapshot {
+        Snapshot {
+            running: false,
+            connections: vec![],
+            polls: vec![],
+            log: vec![],
+            ts_ms: now_ms(),
+        }
+    }
+}
+
+// ------------------------------------------------------------------ poller
+
+fn read_poll(tr: &mut Box<dyn Transport>, poll: &Poll) -> Result<Vec<u16>, ProtoError> {
+    let req = match poll.func {
+        1 => Request::ReadCoils {
+            addr: poll.start,
+            qty: poll.qty,
+        },
+        2 => Request::ReadDiscreteInputs {
+            addr: poll.start,
+            qty: poll.qty,
+        },
+        3 => Request::ReadHoldingRegisters {
+            addr: poll.start,
+            qty: poll.qty,
+        },
+        4 => Request::ReadInputRegisters {
+            addr: poll.start,
+            qty: poll.qty,
+        },
+        _ => return Err(ProtoError::Io("unsupported read function".into())),
+    };
+    let pdu = tr.call(poll.slave, &req.encode())?;
+    match decode_response(&pdu)? {
+        Response::Registers(r) => Ok(r),
+        Response::Bits(b) => {
+            let mut v: Vec<u16> = b.iter().map(|x| *x as u16).collect();
+            v.truncate(poll.qty as usize);
+            Ok(v)
+        }
+        _ => Ok(vec![]),
+    }
+}
+
+fn level_style(level: &str) -> (Option<String>, Option<String>, bool) {
+    match level {
+        "hihi" => (Some("#ffffff".into()), Some("#ef4444".into()), true),
+        "hi" => (Some("#1f2937".into()), Some("#f59e0b".into()), false),
+        "lo" => (Some("#0b1220".into()), Some("#38bdf8".into()), false),
+        "lolo" => (Some("#ffffff".into()), Some("#2563eb".into()), true),
+        _ => (None, None, false),
+    }
+}
+
+fn build_rows(poll: &Poll, regs: &[u16], rules: &[Rule], quality: &str) -> Vec<RowView> {
+    let step = poll.regs_per_value();
+    let values = decode(regs, poll.fmt);
+    let addrs = poll.row_addrs();
+    let mut out = Vec::with_capacity(addrs.len());
+
+    for (i, addr) in addrs.iter().enumerate() {
+        let value = values.get(i).copied().unwrap_or(0.0);
+        let raw = regs.get(i * step).copied().unwrap_or(0);
+        let x = raw as i64;
+
+        let disp = if poll.is_bits() {
+            if raw != 0 {
+                "ON".to_string()
+            } else {
+                "OFF".to_string()
+            }
+        } else {
+            display(raw, value, poll.fmt, poll.mult, poll.div, poll.offset)
+        };
+        let scaled = value * poll.mult / (if poll.div == 0.0 { 1.0 } else { poll.div }) + poll.offset;
+
+        let (mut level, mut msg) = poll
+            .alarm_of(*addr)
+            .map(|a| a.check(scaled))
+            .unwrap_or_else(|| ("ok".into(), String::new()));
+
+        let (mut fg, mut bg, mut blink) = level_style(&level);
+        let mut name = poll.label_of(*addr);
+
+        // Ordered branch evaluation: the first matching rule on the target
+        // wins (Modbus Poll "rule 1 has precedence over rule 2", generalised
+        // to up to MAX_BRANCHES branches per row).
+        if let Some(r) = rules::first_matching(rules, poll.id, i as u16, x) {
+            if let Some(f) = &r.fg {
+                fg = Some(f.clone());
+            }
+            if let Some(b) = &r.bg {
+                bg = Some(b.clone());
+            }
+            blink |= r.blink;
+            if let Some(t) = r.text.as_ref().filter(|t| !t.is_empty()) {
+                // Dynamic row text: short-lived value-bound description.
+                name = t.clone();
+            }
+            if let Some(sev) = r.severity {
+                level = match sev {
+                    Severity::Critical => "hihi".into(),
+                    Severity::Warning => "hi".into(),
+                    Severity::Info => "lo".into(),
+                };
+                msg = r.message.clone().unwrap_or_else(|| r.name.clone());
+                let (sfg, sbg, sbl) = level_style(&level);
+                if r.fg.is_none() {
+                    fg = sfg;
+                }
+                if r.bg.is_none() {
+                    bg = sbg;
+                }
+                blink |= sbl;
+            }
+        }
+
+        out.push(RowView {
+            addr: *addr,
+            disp_addr: poll.disp_addr(*addr),
+            name,
+            raw,
+            value,
+            display: disp,
+            unit: poll.unit.clone(),
+            quality: quality.to_string(),
+            alarm_level: level,
+            alarm_msg: msg,
+            fg,
+            bg,
+            blink,
+        });
+    }
+    out
+}
+
+fn push_log(inner: &Arc<Mutex<Inner>>, conn: &str, dir: &str, text: String, ok: bool) {
+    if let Ok(mut g) = inner.lock() {
+        g.log.push_front(CommEntry {
+            time: now_hms(),
+            conn: conn.to_string(),
+            dir: dir.to_string(),
+            text,
+            ok,
+        });
+        while g.log.len() > 500 {
+            g.log.pop_back();
+        }
+    }
+}
+
+fn update_stats<F: FnOnce(&mut ConnStats)>(inner: &Arc<Mutex<Inner>>, conn_id: &str, f: F) {
+    if let Ok(mut g) = inner.lock() {
+        if let Some(s) = g.stats.get_mut(conn_id) {
+            f(s);
+        }
+    }
+}
+
+fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, rx: Receiver<Command>) {
+    let mut tr: Option<Box<dyn Transport>> = None;
+    let mut next_due: HashMap<u32, Instant> = HashMap::new();
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // service queued writes on this connection
+        while let Ok(cmd) = rx.try_recv() {
+            if let Some(t) = tr.as_mut() {
+                do_command(&inner, t, &conn_id, cmd);
+            }
+        }
+
+        let (conn, polls) = {
+            let g = match inner.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            (
+                g.connections.get(&conn_id).cloned(),
+                g.polls
+                    .iter()
+                    .filter(|p| p.conn_id == conn_id && p.enabled && func_is_read(p.func))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let conn = match conn {
+            Some(c) => c,
+            None => break,
+        };
+        if polls.is_empty() {
+            thread::sleep(Duration::from_millis(300));
+            continue;
+        }
+
+        if tr.is_none() {
+            match open_transport(&conn) {
+                Ok(t) => {
+                    tr = Some(t);
+                    update_stats(&inner, &conn_id, |s| {
+                        s.online = true;
+                        s.last_error.clear();
+                    });
+                }
+                Err(e) => {
+                    update_stats(&inner, &conn_id, |s| {
+                        s.online = false;
+                        s.errors += 1;
+                        s.last_error = e.to_string();
+                    });
+                    push_log(&inner, &conn.name, "ERR", e.to_string(), false);
+                    thread::sleep(Duration::from_millis(800));
+                    continue;
+                }
+            }
+        }
+
+        let now = Instant::now();
+        let mut did = false;
+        for poll in &polls {
+            let due = next_due.get(&poll.id).copied().unwrap_or(now);
+            if now < due {
+                continue;
+            }
+            next_due.insert(
+                poll.id,
+                now + Duration::from_millis(poll.scan_ms.max(20)),
+            );
+            did = true;
+            let t0 = Instant::now();
+            match read_poll(tr.as_mut().unwrap(), poll) {
+                Ok(regs) => {
+                    let dt = t0.elapsed().as_secs_f64() * 1000.0;
+                    let rows = {
+                        let g = inner.lock().unwrap();
+                        build_rows(poll, &regs, &g.rules, "good")
+                    };
+                    let n = rows.len();
+                    if let Ok(mut g) = inner.lock() {
+                        g.rows.insert(poll.id, rows);
+                        g.poll_ms.insert(poll.id, dt);
+                        let s = g.stats.get_mut(&conn_id);
+                        if let Some(s) = s {
+                            s.tx += 1;
+                            s.rx += 1;
+                            s.last_ms = dt;
+                            s.avg_ms = if s.avg_ms == 0.0 {
+                                dt
+                            } else {
+                                (s.avg_ms * 9.0 + dt) / 10.0
+                            };
+                            s.online = true;
+                        }
+                    }
+                    push_log(
+                        &inner,
+                        &polls_conn_name(&inner, &conn_id),
+                        "RX",
+                        format!("{}: {} значений, {:.1} мс", poll.name, n, dt),
+                        true,
+                    );
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    update_stats(&inner, &conn_id, |s| {
+                        if matches!(e, ProtoError::Io(_)) {
+                            s.timeouts += 1;
+                        } else {
+                            s.errors += 1;
+                        }
+                        s.online = false;
+                        s.last_error = msg.clone();
+                    });
+                    if let Ok(mut g) = inner.lock() {
+                        let bad = g
+                            .rows
+                            .get(&poll.id)
+                            .cloned()
+                            .map(|mut r| {
+                                for row in &mut r {
+                                    row.quality = "bad".into();
+                                }
+                                r
+                            })
+                            .unwrap_or_default();
+                        g.rows.insert(poll.id, bad);
+                    }
+                    push_log(
+                        &inner,
+                        &polls_conn_name(&inner, &conn_id),
+                        "ERR",
+                        format!("{}: {}", poll.name, msg),
+                        false,
+                    );
+                    tr = None;
+                    break;
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(if did { 3 } else { 15 }));
+    }
+}
+
+fn polls_conn_name(inner: &Arc<Mutex<Inner>>, conn_id: &str) -> String {
+    inner
+        .lock()
+        .ok()
+        .and_then(|g| g.connections.get(conn_id).map(|c| c.name.clone()))
+        .unwrap_or_else(|| conn_id.to_string())
+}
+
+fn do_command(inner: &Arc<Mutex<Inner>>, tr: &mut Box<dyn Transport>, conn_id: &str, cmd: Command) {
+    match cmd {
+        Command::Write {
+            poll_id,
+            addr,
+            value,
+            multi,
+            values,
+        } => {
+            let poll = inner
+                .lock()
+                .ok()
+                .and_then(|g| g.polls.iter().find(|p| p.id == poll_id).cloned());
+            let poll = match poll {
+                Some(p) => p,
+                None => return,
+            };
+            let req = if multi {
+                Request::WriteMultipleRegisters {
+                    addr,
+                    values: values.clone(),
+                }
+            } else if poll.is_bits() {
+                Request::WriteSingleCoil {
+                    addr,
+                    on: value != 0,
+                }
+            } else {
+                Request::WriteSingleRegister { addr, value }
+            };
+            let conn_name = polls_conn_name(inner, conn_id);
+            match tr.call(poll.slave, &req.encode()) {
+                Ok(pdu) => match decode_response(&pdu) {
+                    Ok(_) => push_log(
+                        inner,
+                        &conn_name,
+                        "WR",
+                        format!("{} @{} = {}", poll.name, addr, if multi { "multi".into() } else { value.to_string() }),
+                        true,
+                    ),
+                    Err(e) => push_log(inner, &conn_name, "ERR", format!("write @{addr}: {e}"), false),
+                },
+                Err(e) => push_log(inner, &conn_name, "ERR", format!("write @{addr}: {e}"), false),
+            }
+        }
+    }
+}
