@@ -1,11 +1,13 @@
-//! Transports: Modbus/TCP (MBAP), RTU over serial, RTU over TCP.
+//! Transports: Modbus/TCP (MBAP), RTU over serial, RTU over TCP,
+//! Modbus ASCII over serial / TCP.
 //!
 //! One `call` = one request PDU -> one response PDU. All framing differences
-//! (MBAP vs RTU+CRC) live here; the engine stays transport-agnostic.
+//! (MBAP vs RTU+CRC vs ':'+hex+LRC) live here; the engine stays
+//! transport-agnostic.
 
 use crate::model::{ConnKind, Connection};
 use mb_proto::error::ProtoError;
-use mb_proto::{mbap, rtu};
+use mb_proto::{ascii, mbap, rtu};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -144,6 +146,58 @@ impl Transport for RtuSerialTransport {
     }
 }
 
+// ------------------------------------------------------------- ASCII serial/TCP
+
+pub struct AsciiSerialTransport {
+    port: Box<dyn serialport::SerialPort>,
+}
+
+impl AsciiSerialTransport {
+    pub fn open(conn: &Connection) -> Result<Self, ProtoError> {
+        let s = &conn.serial;
+        let port = serialport::new(&s.port, s.baud)
+            .data_bits(data_bits_of(s.data_bits))
+            .parity(parity_of(&s.parity))
+            .stop_bits(stop_bits_of(s.stop_bits))
+            .timeout(Duration::from_millis(conn.timeout_ms.max(50) as u64))
+            .open()
+            .map_err(|e| ProtoError::Io(format!("open {}: {e}", s.port)))?;
+        Ok(Self { port })
+    }
+}
+
+impl Transport for AsciiSerialTransport {
+    fn call(&mut self, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
+        ascii_call(&mut self.port, unit, pdu)
+    }
+}
+
+pub struct AsciiOverTcpTransport {
+    stream: TcpStream,
+}
+
+impl AsciiOverTcpTransport {
+    pub fn connect(host: &str, port: u16, timeout: Duration) -> Result<Self, ProtoError> {
+        let addr = (host, port)
+            .to_socket_addrs()
+            .map_err(io_err)?
+            .next()
+            .ok_or_else(|| ProtoError::Io("no address".into()))?;
+        let stream = TcpStream::connect_timeout(&addr, timeout).map_err(io_err)?;
+        stream
+            .set_read_timeout(Some(timeout))
+            .and_then(|_| stream.set_write_timeout(Some(timeout)))
+            .map_err(io_err)?;
+        Ok(Self { stream })
+    }
+}
+
+impl Transport for AsciiOverTcpTransport {
+    fn call(&mut self, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
+        ascii_call(&mut self.stream, unit, pdu)
+    }
+}
+
 // ---------------------------------------------------------------- RTU framing
 
 /// Shared RTU request/response over any blocking duplex (serial or TCP).
@@ -180,6 +234,35 @@ fn read_into<R: Read>(io: &mut R, buf: &mut Vec<u8>, n: usize) -> Result<(), Pro
     Ok(())
 }
 
+// --------------------------------------------------------------- ASCII framing
+
+/// Shared Modbus ASCII request/response over any blocking duplex.
+///
+/// Responses have no length field: read until the terminating `\r\n` is seen
+/// (bounded, so a dead line can't fill memory).
+pub fn ascii_call<R: Read + Write>(io: &mut R, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
+    let frame = ascii::encode(unit, pdu);
+    io.write_all(&frame).and_then(|_| io.flush()).map_err(io_err)?;
+
+    let mut buf = Vec::with_capacity(64);
+    let mut one = [0u8; 1];
+    loop {
+        io.read_exact(&mut one).map_err(io_err)?;
+        buf.push(one[0]);
+        if buf.len() >= 2 && &buf[buf.len() - 2..] == b"\r\n" {
+            break;
+        }
+        if buf.len() > 1024 {
+            return Err(ProtoError::Truncated);
+        }
+    }
+    let (unit_rx, out) = ascii::parse(&buf)?;
+    if unit_rx != unit {
+        return Err(ProtoError::BadProtocolId(unit_rx as u16));
+    }
+    Ok(out)
+}
+
 // ------------------------------------------------------------------ factory
 
 pub fn open_transport(conn: &Connection) -> Result<Box<dyn Transport>, ProtoError> {
@@ -192,9 +275,12 @@ pub fn open_transport(conn: &Connection) -> Result<Box<dyn Transport>, ProtoErro
             timeout,
         )?)),
         ConnKind::Rtu => Ok(Box::new(RtuSerialTransport::open(conn)?)),
-        ConnKind::Ascii | ConnKind::AsciiOverTcp => Err(ProtoError::Io(
-            "Modbus ASCII not implemented yet".into(),
-        )),
+        ConnKind::Ascii => Ok(Box::new(AsciiSerialTransport::open(conn)?)),
+        ConnKind::AsciiOverTcp => Ok(Box::new(AsciiOverTcpTransport::connect(
+            &conn.host,
+            conn.port,
+            timeout,
+        )?)),
     }
 }
 
@@ -265,5 +351,46 @@ mod tests {
             decode_response(&out),
             Err(ProtoError::Exception(_))
         ));
+    }
+
+    #[test]
+    fn ascii_call_frames_and_parses() {
+        // A slave reply for FC3, unit 0x11: [unit][fc][bc=6][regs][lrc] as ASCII.
+        let resp_pdu: Vec<u8> = {
+            let mut v = vec![0x03u8, 0x04];
+            v.extend(0x0306u16.to_be_bytes()); // reg 774
+            v.extend(0x876Bu16.to_be_bytes()); // reg 34667
+            v
+        };
+        let resp = ascii::encode(0x11, &resp_pdu);
+        assert_eq!(&resp[0..1], b":");
+
+        let mut io = MockIo {
+            rx: Cursor::new(resp),
+            tx: Vec::new(),
+        };
+        let req = Request::ReadHoldingRegisters {
+            addr: 0x6B,
+            qty: 2,
+        };
+        let out = ascii_call(&mut io, 0x11, &req.encode()).expect("ascii call");
+        assert_eq!(
+            decode_response(&out).unwrap(),
+            Response::Registers(vec![774, 34667])
+        );
+        // the bytes written must be a valid ASCII frame for our request
+        assert_eq!(io.tx, ascii::encode(0x11, &req.encode()));
+    }
+
+    #[test]
+    fn ascii_call_dead_line_is_bounded() {
+        // runs out of bytes before CRLF -> Truncated, not a hang/growth
+        let mut io = MockIo {
+            rx: Cursor::new(vec![b':' ; 2048]), // no CRLF ever
+            tx: Vec::new(),
+        };
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 };
+        let out = ascii_call(&mut io, 0x01, &req.encode());
+        assert!(out.is_err());
     }
 }

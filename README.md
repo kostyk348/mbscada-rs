@@ -1,161 +1,172 @@
-# mbSCADA — Modbus Poll + SCADA
+<div align="center">
+
+# 📡 mbSCADA
+
+### Modbus Poll, reimagined — in pure Rust.
+
+**A clean-room Modbus Poll reimplementation with a SCADA mode on top.**
+Poll Modbus/TCP & RTU devices into live value tables, import real Modbus Poll `.mbp/.mbw` files byte-exactly,
+style any row from a 32-branch rule tree and build mimic diagrams —
+all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 [![CI](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-51%20passing-brightgreen)
-![license](https://img.shields.io/github/license/kostyk348/mbscada-rs)
-![lang](https://img.shields.io/badge/rust-1.85%2B-orange)
+[![Tests](https://img.shields.io/badge/tests-57%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust&logoColor=black)](https://rustup.rs/)
+[![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
+[![Byte‑exact .mbp](https://img.shields.io/badge/.mbp-byte%E2%80%91exact%20round‑trip-0ea5e9)](#-modbus-poll-compatibility)
+[![ASCII](https://img.shields.io/badge/modbus‑TCP·RTU·ASCII-success)](#%EF%B8%8F-feature-tour)
 
-Чистая (clean-room) реализация **Modbus Poll** на **Rust**: опрос Modbus-устройств, живые таблицы значений, аварии, журнал обмена — плюс **SCADA-режим** (мимик-схемы) и расширенные стилевые правила, которых в оригинале нет.
+**English** · [Русский](README.ru.md)
 
-> Clean-room: формат файлов изучен по байтам реальных `.mbp/.mbw` и документации Modbus Poll; исходники Modbus Poll не использовались.
+<img src="docs/img/app.png" alt="mbSCADA — live poll tables with quality badges and per-row sparklines" width="100%">
 
-**🇷🇺 Русский** · [🇬🇧 English (below)](#-english) · [Оглавление: Features](#возможности) / [Features](#features)
-
-![Таблицы, живые значения](docs/img/app.png)
-
-## Возможности
-
-**Опрос (Modbus master, как в Modbus Poll)**
-- Транспорты: Modbus/TCP, RTU (COM), RTU-over-TCP; заготовки ASCII/ASCII-over-TCP.
-- Функции: 01/02/03/04 (чтение), 05/06/0F/10 (запись), каждый опрос со своим slave/адресом/периодом.
-- Каждый опрос — свой «взгляд» на адреса: количество, база 0/1, шкалирование (`×mult ÷div +offset`).
-
-**Форматы отображения (Modbus Poll + расширения)**
-- `u16 / i16 / hex16 / bin16 / ascii16 / u16 (swapped)`
-- `u32 / i32 / hex32` (слова ABCD), `float32` в 4 вариантах порядка слов: **ABCD / CDAB / BADC / DCBA**
-- 64-битные: `u64 / i64 / f64` (ABCD)
-- Шкалирование и единицы измерения на опрос.
-
-**Аварии и правила (superset Modbus Poll)**
-- Пороговые аварии как в оригинале: hi / hi-hi / lo / lo-lo с подписями.
-- Стилевые правила: цвет/мигание, до **32 веток на строку** (в оригинале — 2 цветовых правила), операторы `> ≥ < ≤ = ≠`, в диапазоне / вне диапазона, бит.
-- **Динамический текст строки**: ветка подменяет подпись строки по значению (например «0 → Закрыт, 1 → Открыт»).
-- Приоритет первой сработавшей ветки (обобщение «Rule 1 старше Rule 2»).
-
-**SCADA (мимик-схемы)** — редактор схем: фигуры, подписи, привязка к живым регистрам (Modbus Poll не имеет SCADA-режима — это наше расширение). Плюс журнал обмена со временем отклика каждого ответа.
-
-![SCADA-редактор и журнал обмена](docs/img/scada.png)
-
-**Совместимость с Modbus Poll**
-- Импорт `.mbp` (конфигурация окна) и `.mbw` (workspace, список окон), в том числе по папке.
-- Разбор побайтовый: маркер `FF FE FF` + UTF-16LE строки, per-row записи `[alias][PAD][6×color][6×0]`, хвостовые поля (период/slave и пр.) — проверен на реальных файлах Modbus Poll 10.5.
-- Формат, множитель, адрес, цвета переносятся в опросы.
-
-**Инженерное**
-- Журнал обмена (TX/RX/ошибки/тайминги) и статистика соединений (online, сотни опросов/сек).
-- Симулятор ведомого (`mb-sim`) для тестов без железа; интеграционные тесты движка по TCP и RTU-over-TCP.
-
-## Сборка и запуск
-
-```bash
-# тесты
-cargo test
-
-# приложение (Tauri 2, Windows)
-cd apps/mbscada/src-tauri
-cargo build --release --target x86_64-pc-windows-gnu
-# готовый exe: target/x86_64-pc-windows-gnu/release/mbscada.exe
-
-# демо-ведомый (для проверки без железа)
-cargo run -p mb-sim --example demo_server -- 502
-```
-
-## Структура
-
-```
-crates/
-  mb-proto/    PDU/RTU/MBAP: кодирование, CRC, исключения
-  mb-format/   парсер/писатель .mbp/.mbw
-  mb-engine/   многопоточный движок опроса, форматы, правила, аварии
-  mb-sim/      симулятор ведомого + сетевые обёртки
-apps/
-  mbscada/     Tauri 2 UI (таблицы, схемы SCADA, правила, журнал)
-```
-
-## Дорожная карта
-
-- [ ] ASCII-транспорт (заготовки уже в enum)
-- [ ] CSV-логирование значений по времени
-- [ ] Графики трендов per-row
-- [x] Byte-exact `.mbp` round-trip: `mbp_doc` хранит файл сегментами (head / строки / closer) и собирает бит-в-бит; правка alias не портит осталь­ные байты
-
-## Лицензия
-
-MIT
+</div>
 
 ---
 
-## 🇬🇧 English
+## 🧭 TL;DR
 
-A clean-room reimplementation of **Modbus Poll** in **Rust**: Modbus polling, live value tables, alarms, traffic log — plus a **SCADA mode** (mimic diagrams) and extended styling rules that the original does not have.
+- 🖥 **Modbus Poll, but better.** Polls 01/02/03/04, writes 05/06/0F/10, per-poll slave / base-0·1 address / scaling / engineering units — and every connection gets a live traffic log with per-response turnaround.
+- 🤝 **Drop-in for your existing configs.** Real Modbus Poll `.mbp` / `.mbw` files import by folder — and a byte-exact round-trip layer (`write(parse(bytes)) == bytes`, proven on real 10.5 files) keeps them intact.
+- 🎨 **32 styled branches per row.** The original gives you two colour rules; here every row gets a first-match rule tree with per-branch dynamic row text («0 → Закрыт, 1 → Открыт»).
+- 📈 **Trends, alarms, CSV.** Per-row sparklines, hi/hi‑hi/lo/lo‑lo alarms, blink styles — and a one-click CSV value log.
+- ⚡ **Fast & local.** A multithreaded engine (`mb-engine`) drives all connections concurrently; no telemetry, no cloud, nothing leaves the machine.
 
-> Clean-room: the file format was studied from real `.mbp/.mbw` bytes and Modbus Poll documentation; no Modbus Poll sources were used.
+<details open>
+<summary><b>👀 30-second tour</b></summary>
 
-### Features
+<br>
 
-**Polling (Modbus master, like Modbus Poll)**
-- Transports: Modbus/TCP, RTU (COM), RTU-over-TCP; ASCII / ASCII-over-TCP stubs ready.
-- Functions: 01/02/03/04 (read), 05/06/0F/10 (write); each poll has its own slave/address/period.
-- Every poll is an independent view of the address space: count, 0/1 base, scaling (`×mult ÷div +offset`).
+| | |
+|---|---|
+| **Live tables** | <img src="docs/img/app.png" width="100%"> |
+| **SCADA + traffic log** | <img src="docs/img/scada.png" width="100%"> |
 
-**Display formats (Modbus Poll + extensions)**
-- `u16 / i16 / hex16 / bin16 / ascii16 / u16 (swapped)`
-- `u32 / i32 / hex32` (ABCD words), `float32` in 4 word orders: **ABCD / CDAB / BADC / DCBA**
-- 64-bit: `u64 / i64 / f64` (ABCD)
-- Per-poll scaling and engineering units.
+</details>
 
-**Alarms & rules (superset of Modbus Poll)**
-- Threshold alarms like the original: hi / hi-hi / lo / lo-lo with labels.
-- Styling rules: color/blink, up to **32 branches per row** (the original has only 2 color rules); operators `> ≥ < ≤ = ≠`, in-range / out-of-range, bit test.
-- **Dynamic row text**: a branch can replace the row label by value (e.g. «0 → Closed, 1 → Open»).
-- First matching branch wins (generalizing “Rule 1 before Rule 2”).
+## ✨ Feature tour
 
-**SCADA (mimic diagrams)** — a diagram editor: shapes, labels, bindings to live registers (Modbus Poll has no SCADA mode — that's our extension). Plus a traffic log with per-response turnaround time.
+### 📊 Live tables
 
-**Modbus Poll compatibility**
-- Import of `.mbp` (single window config) and `.mbw` (workspace with window list), including whole-folder import.
-- Byte-accurate parsing: `FF FE FF` markers + UTF-16LE strings, per-row records `[alias][PAD][6×color][6×0]`, trailing fields (period/slave etc.) — verified against real Modbus Poll 10.5 files.
-- Format, multiplier, address and colors are carried over into polls.
+<img src="docs/img/app.png" alt="Live tables: imported KAT2 poll flowing at 1000 ms with quality badges" width="100%">
 
-**Engineering**
-- Traffic log (TX/RX/errors/timings) and per-connection stats (online state, polls per second).
-- Slave simulator (`mb-sim`) for testing without hardware; TCP and RTU-over-TCP integration tests.
+- Every poll is an independent **view of the address space**: own function, own register window, own scaling `×mult ÷div +offset`, own 0/1 address base.
+- Values render in **Modbus-Poll-style formats**: `u16 / i16 / hex16 / bin16 / ascii16 / u16(swapped)` · `u32 / i32 / hex32` · `float32` in word orders **ABCD / CDAB / BADC / DCBA** · 64-bit `u64 / i64 / f64`.
+- **Per-row sparklines** keep the last 40 samples as inline SVG — the last buffer change blinks.
+- Click a row to write a value (FC 05/06 for bits, FC 16 for word arrays).
 
-### Build & run
+### 🚦 Rules & alarms
+
+- Threshold alarms exactly like Modbus Poll: **hi / hi‑hi / lo / lo‑lo** with messages.
+- Styling rules with **up to 32 branches per row** and operators `> ≥ < ≤ = ≠`, in-range / out-of-range, **bit test**.
+- First matching branch wins — the classic «Rule 1 over Rule 2» becomes a full priority list.
+- **Dynamic row text** per branch: the row label is replaced when a branch fires (state machines live in the table header).
+
+### 🗺 SCADA mode (mimic diagrams)
+
+| | |
+|---|---|
+| <img src="docs/img/scada.png" width="100%"> | Editor with shapes and lamp widgets bound to live registers… plus the **traffic log** on the right: every TX/RX, every error and per-response turnaround |
+
+Modbus Poll has no SCADA mode. That is the point of mbSCADA.
+
+### 🤝 Modbus Poll compatibility
+
+- **Import** of `.mbp` (single window) and `.mbw` (workspace with the window list) — one by one or by folder. Tested on a real Modbus Poll 10.5 corpus (7 files, RU aliases with UTF-16 markers).
+- **Byte-exact round-trip** (`mbp_doc`): the file is segmented (`head` / row records / closing marker) and reassembled **bit-for-bit**; editing an alias touches nothing else. `write(parse(bytes)) == bytes` is asserted by CI on the whole corpus.
+- Format, multiplier, address base, aliases and colours carry over into polls; connections are reconstructed from file IPs.
+
+<details>
+<summary><b>📐 Real corpus layout (reverse-engineered)</b></summary>
+
+```text
+[head]                     magic v4=7000 (v5=10010), IP marker (v5), [144][func][addr][qty]
+[row record] × qty         marker FF FE FF + len + UTF-16LE alias → PAD 55555555
+                           + 6× colour u32 (FF000000 AVG) + zeros
+[last row + settings]      the last row's gap holds the settings blob & tail
+                           [period][slave][1][0][0][…]
+[closing marker]           final empty marker FF FE FF 00 + trailer bytes
+```
+
+</details>
+
+## 🚀 Getting started
+
+### Build from source
+
+**Requirements:** [Rust](https://rustup.rs/) 1.85+, Windows (WebView2 is preinstalled on Win10/11), or Linux with `libudev-dev pkg-config libwebkit2gtk-4.1-dev` for GUI work.
 
 ```bash
-# tests
-cargo test
+git clone https://github.com/kostyk348/mbscada-rs.git
+cd mbscada-rs
+cargo test                # 57 engine tests
 
-# app (Tauri 2, Windows)
+# demo slave (no hardware needed): serves registers on 127.0.0.1:502
+cargo run -p mb-sim --example demo_server -- 502
+
+# the app (Tauri 2)
 cd apps/mbscada/src-tauri
 cargo build --release --target x86_64-pc-windows-gnu
-# executable: target/x86_64-pc-windows-gnu/release/mbscada.exe
-
-# demo slave (no hardware needed)
-cargo run -p mb-sim --example demo_server -- 502
+# → target/x86_64-pc-windows-gnu/release/mbscada.exe
 ```
 
-### Structure
+Launch `mbscada.exe`, «Импорт папки…» your `.mbp` folder and hit **Старт** — real Modbus Poll windows appear as polls and start flowing.
 
+## 🏗 Architecture
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│                    Tauri 2 desktop shell (Rust)                    │
+│  src-tauri: dialogs, project JSON, CSV append, engine restarts     │
+├────────────────────────────────────────────────────────────────────┤
+│  UI (vanilla JS)                                                   │
+│  tables · rule editor (32 branches) · SCADA editor · traffic log   │
+├────────────────────────────────────────────────────────────────────┤
+│  crates/                                                           │
+│  mb-proto    PDU encode/decode · MBAP · RTU+CRC · ASCII ':'+LRC     │
+│  mb-format   .mbp/.mbw parser → lossless MbpDoc → semantic Table    │
+│  mb-engine   multithreaded poller: TCP · RTU-serial · RtuOverTcp    │
+│              · Ascii-serial · AsciiOverTcp, rules, alarms, trends  │
+│  mb-sim      slave simulator (+ demo_server example)               │
+└────────────────────────────────────────────────────────────────────┘
 ```
-crates/
-  mb-proto/    PDU/RTU/MBAP: encoding, CRC, exceptions
-  mb-format/   .mbp/.mbw parser/writer
-  mb-engine/   multithreaded polling engine, formats, rules, alarms
-  mb-sim/      slave simulator + network wrappers
-apps/
-  mbscada/     Tauri 2 UI (tables, SCADA diagrams, rules, log)
-```
 
-### Roadmap
+## 🗺 Roadmap
 
-- [x] Byte-exact `.mbp` round-trip: `mbp_doc` keeps the file as segments (head / rows / closer) and reassembles it bit-for-bit; editing an alias leaves all other bytes untouched
-- [ ] ASCII transport (enum stubs already in place)
-- [ ] Time-series CSV logging
-- [ ] Per-row trend charts
-- [ ] Byte-exact `.mbp` writer (currently canonical semantic round-trip)
+- ✅ Modbus/TCP, RTU, RTU-over-TCP transports with per-connection traffic log (v0.1)
+- ✅ Import `.mbp`/`.mbw` by file and by folder (v0.1)
+- ✅ 32-branch styled rules + dynamic row text — UI and engine (v0.2)
+- ✅ Display formats through 64-bit: hex32 / ascii16 / u16‑swapped / u64 / i64 / f64 (v0.3)
+- ✅ Byte-exact `.mbp` round-trip on a real corpus (v0.4)
+- ✅ Modbus ASCII framing + ASCII serial & over-TCP transports (v0.4)
+- ✅ Per-row sparklines + CSV value log (v0.4)
+- ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
+- ⬜ Per-row trend window (bigger than a sparkline)
+- ⬜ macOS / Linux release builds
 
-### License
+## ⁇ FAQ
 
-MIT
+**Is this a Modbus Poll rip-off?**
+No. This is a **clean-room** implementation: the wire protocol is public spec, and the `.mbp` layout was learned from byte-level analysis of files produced by Modbus Poll 10.5 — no proprietary source code was touched.
+
+**What "byte-exact round-trip" means for me?**
+Your Modbus Poll files go in, everything else comes back identical. mbSCADA can edit aliases without regenerating the whole file, so unedited bytes stay exactly as Modbus Poll wrote them.
+
+**Does it talk to my devices today?**
+TCP / RTU / RTU-over-TCP are production paths with integration tests. ASCII framing and its serial / over-TCP transports are implemented and unit-tested; wire-side integration testing on real devices is on the roadmap.
+
+**Why Rust?**
+One executable, no runtime, memory-safe poller — and the whole engine is testable headlessly (see `cargo test`).
+
+## 🤝 Contributing
+
+Issues and PRs welcome. The engine is test-first: `crates/mb-engine`, `crates/mb-format` / `crates/mb-proto` all have unit suites covering Tauri-free paths — start there.
+
+<div align="center">
+
+**mbSCADA** — Modbus Poll for people who also want SCADA.
+
+[Build it](#-getting-started) · [Roadmap](#-roadmap) · [License (MIT)](LICENSE)
+
+</div>

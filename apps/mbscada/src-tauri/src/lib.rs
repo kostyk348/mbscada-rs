@@ -143,6 +143,26 @@ fn load_project(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Append one or many raw CSV lines to a log file (frontend builds the rows).
+#[tauri::command]
+fn csv_log(path: String, lines: Vec<String>) -> Result<usize, String> {
+    use std::io::Write as _;
+    if lines.is_empty() {
+        return Ok(0);
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    let mut n = 0;
+    for l in &lines {
+        writeln!(f, "{l}").map_err(|e| e.to_string())?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 /// Import Modbus Poll files (`<path>` may be a .mbw, a .mbp, or a folder).
 #[tauri::command]
 fn import_paths(paths: Vec<String>) -> mb_engine::import::ImportResult {
@@ -167,6 +187,7 @@ pub fn run() {
             write_multi,
             save_project,
             load_project,
+            csv_log,
             import_paths,
         ])
         .run(tauri::generate_context!())

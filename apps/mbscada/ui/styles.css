@@ -82,6 +82,10 @@ table.regtable tr.row { cursor: pointer; }
 table.regtable tr.row:hover { outline: 1px solid var(--accent); }
 tr.blink { animation: blinker 1s step-start infinite; }
 @keyframes blinker { 50% { opacity: 0.35; } }
+
+/* value sparkline cell */
+td .spark { display: block; color: var(--accent, #38bdf8); opacity: 0.9; }
+.spark.blink-spark { animation: blinker 1s step-start infinite; }
 .good { color: var(--ok); } .bad { color: var(--crit); } .off { color: var(--muted); }
 
 /* stats + log */

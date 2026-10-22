@@ -15,6 +15,104 @@ const FMTL = { u16: "u16", i16: "i16", hex: "hex16", bin: "bin16", ascii16: "asc
   u64: "u64", i64: "i64", f64: "f64" };
 const KINDL = { tcp: "TCP", rtu: "Serial", rtu_over_tcp: "RTU/TCP", ascii: "ASCII", ascii_over_tcp: "ASCII/TCP" };
 
+/* ------------------------------------------------------------ sparklines -- */
+/* Per-row value history + inline SVG polyline. Lives only in this session.  */
+const SPARK_N = 40;
+const SPARK_HIST = {};          // "pollId:addr" -> {vals:[], t0, t1, min, max}
+const SPARK_W = 110, SPARK_H = 22;
+
+function pushSpark(pollId, r, value) {
+  const key = pollId + ":" + r.addr;
+  let h = SPARK_HIST[key];
+  if (!h) h = (SPARK_HIST[key] = { vals: [], min: Infinity, max: -Infinity });
+  const num = parseFloat(value);
+  if (Number.isFinite(num)) {
+    h.vals.push(num);
+    if (h.vals.length > SPARK_N) h.vals.shift();
+    if (num < h.min) h.min = num;
+    if (num > h.max) h.max = num;
+  }
+  if (r.blink) h.blink = Date.now();
+  return key;
+}
+
+function sparkLineSvg(h) {
+  const v = h && h.vals.length ? h.vals : [];
+  const span = h ? Math.max(h.max - h.min, 1e-9, Math.abs(h.max || 1) * 1e-6) : 1;
+  const pts = v.map((y, i) => `${(i / Math.max(v.length - 1, 1) * SPARK_W).toFixed(1)},${(SPARK_H - 2 - ((y - h.min) / span) * (SPARK_H - 4)).toFixed(1)}`);
+  const now = Date.now();
+  const fresh = h && h.blink && now - h.blink < 900;
+  return `<svg class="spark${fresh ? " blink-spark" : ""}" width="${SPARK_W}" height="${SPARK_H}" viewBox="0 0 ${SPARK_W} ${SPARK_H}">` +
+    (pts.length > 1 ? `<polyline points="${pts.join(" ")}" fill="none" stroke="currentColor" stroke-width="1.2"/>` : "") +
+    `</svg>`;
+}
+
+function sparkline(pollId, r, display) {
+  const key = pushSpark(pollId, r, display);
+  return sparkLineSvg(SPARK_HIST[key]);
+}
+
+/* ------------------------------------------------------------ CSV logging -- */
+/* Frontend accumulates per-row values each refresh tick and appends only the
+   changed ones through the backend (`csv_log`). One file, timestamped rows.  */
+const CSV = { on: false, path: "", last: {} };
+
+async function csvToggle() {
+  if (!hasTauri) { footer("CSV-лог — только в Tauri-сборке", true); return; }
+  if (CSV.on) {
+    CSV.on = false;
+    CSV.path = "";
+    csvBtnState();
+    footer("CSV-лог остановлен");
+    return;
+  }
+  try {
+    const path = await invoke("plugin:dialog|save", {
+      options: {
+        title: "Куда писать CSV-лог",
+        defaultPath: "mbscada-log.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      },
+    });
+    if (!path) { footer("csv-лог отменён"); return; }
+    CSV.on = true;
+    CSV.path = path;
+    CSV.last = {};
+    await invoke("csv_log", { path: CSV.path, lines: ["time,poll_id,poll,func,addr,name,display,quality"] });
+    csvBtnState();
+    footer("CSV-лог пишется: " + path);
+  } catch (e) { footer(String(e), true); }
+}
+
+function csvBtnState() {
+  const b = $("csvBtn");
+  if (!b) return;
+  b.textContent = CSV.on ? "■ CSV" : "CSV";
+  b.classList.toggle("accent", CSV.on);
+}
+
+async function csvMaybeAppend(polls) {
+  if (!hasTauri || !CSV.on || !snap) return;
+  const lines = [];
+  const t = new Date().toISOString();
+  for (const p of polls) {
+    for (const r of p.rows || []) {
+      const key = p.id + ":" + r.disp_addr;
+      const sig = r.display + "\u0001" + r.quality;
+      if (CSV.last[key] === sig) continue;
+      CSV.last[key] = sig;
+      lines.push(`${t},${p.id},${csvField(p.name)},${p.func},${r.disp_addr},${csvField(r.name)},${csvField(r.display)},${r.quality}`);
+    }
+  }
+  if (!lines.length) return;
+  try { await invoke("csv_log", { path: CSV.path, lines }); } catch { /* keep ticking */ }
+}
+
+function csvField(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
 /* ------------------------------------------------------------ bootstrap -- */
 async function boot() {
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
@@ -73,6 +171,10 @@ async function refresh() {
   try {
     if (!hasTauri) { render(); return; } // browser preview: empty, no fake data
     snap = await invoke("snapshot");
+    if (CSV.on && snap) {
+      const pollsForCsv = snap.polls.length ? snap.polls : cfg.polls;
+      await csvMaybeAppend(pollsForCsv);
+    }
     render();
   } catch (e) { footer("ошибка: " + e, true); }
 }
@@ -184,7 +286,7 @@ function renderGrid() {
 
     const table = document.createElement("table");
     table.className = "regtable";
-    table.innerHTML = `<thead><tr><th>Адрес</th><th>Имя</th><th>Значение</th><th>Ед.</th><th>Кач.</th><th>Авария</th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>Адрес</th><th>Имя</th><th>Значение</th><th>Тренд</th><th>Ед.</th><th>Кач.</th><th>Авария</th></tr></thead>`;
     const tb = document.createElement("tbody");
     const rows = (p.rows && p.rows.length) ? p.rows : synthRows(cfgById[p.id] || p);
     for (const r of rows) {
@@ -193,8 +295,9 @@ function renderGrid() {
       if (r.fg) tr.style.color = r.fg;
       if (r.bg) tr.style.background = r.bg;
       const alarm = r.alarm_level && r.alarm_level !== "ok" ? "⚠ " + esc(r.alarm_msg || r.alarm_level) : "";
+      const spark = sparkline(p.id, r, r.display);
       tr.innerHTML = `<td class="mono">${r.disp_addr}</td><td>${esc(r.name)}</td>
-        <td class="mono"><b>${esc(r.display)}</b></td><td>${esc(r.unit)}</td>
+        <td class="mono"><b>${esc(r.display)}</b></td><td>${spark}</td><td>${esc(r.unit)}</td>
         <td class="${r.quality}">${r.quality}</td><td>${alarm}</td>`;
       tr.title = "клик — записать значение";
       tr.onclick = () => writeRow(p, r);
@@ -202,7 +305,7 @@ function renderGrid() {
     }
     if (!rows.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="6" class="empty">нет данных</td>`;
+      tr.innerHTML = `<td colspan="7" class="empty">нет данных</td>`;
       tb.appendChild(tr);
     }
     table.appendChild(tb);
@@ -462,6 +565,8 @@ function wireForms() {
   $("btnStop").onclick = stopPolling;
   $("btnSave").onclick = saveProject;
   $("btnLoad").onclick = loadProject;
+  const bc = $("csvBtn");
+  if (bc) bc.onclick = csvToggle;
   $("btnImportFiles").onclick = importFiles;
   $("btnImportFolder").onclick = importFolder;
   const bp = $("btnPorts");
