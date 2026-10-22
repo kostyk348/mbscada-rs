@@ -3,3 +3,5 @@
 *.exe
 *.pdb
 node_modules/
+
+tmp/*.png

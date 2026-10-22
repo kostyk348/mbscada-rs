@@ -9,8 +9,10 @@ let editingPoll = null;
 const $ = (id) => document.getElementById(id);
 
 const FUNC = { 1: "01 Coils", 2: "02 Discr", 3: "03 Holding", 4: "04 Input" };
-const FMTL = { u16: "u16", i16: "i16", hex: "hex", bin: "bin", u32: "u32", i32: "i32",
-  f32_abcd: "f32 ABCD", f32_cdab: "f32 CDAB", f32_badc: "f32 BADC", f32_dcba: "f32 DCBA" };
+const FMTL = { u16: "u16", i16: "i16", hex: "hex16", bin: "bin16", ascii16: "ascii16",
+  u16swapped: "u16 swp", u32: "u32", i32: "i32", hex32: "hex32",
+  f32_abcd: "f32 ABCD", f32_cdab: "f32 CDAB", f32_badc: "f32 BADC", f32_dcba: "f32 DCBA",
+  u64: "u64", i64: "i64", f64: "f64" };
 const KINDL = { tcp: "TCP", rtu: "Serial", rtu_over_tcp: "RTU/TCP", ascii: "ASCII", ascii_over_tcp: "ASCII/TCP" };
 
 /* ------------------------------------------------------------ bootstrap -- */
