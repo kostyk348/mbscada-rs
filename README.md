@@ -1,5 +1,10 @@
 # mbSCADA — Modbus Poll + SCADA
 
+[![CI](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
+![tests](https://img.shields.io/badge/tests-51%20passing-brightgreen)
+![license](https://img.shields.io/github/license/kostyk348/mbscada-rs)
+![lang](https://img.shields.io/badge/rust-1.85%2B-orange)
+
 Чистая (clean-room) реализация **Modbus Poll** на **Rust**: опрос Modbus-устройств, живые таблицы значений, аварии, журнал обмена — плюс **SCADA-режим** (мимик-схемы) и расширенные стилевые правила, которых в оригинале нет.
 
 > Clean-room: формат файлов изучен по байтам реальных `.mbp/.mbw` и документации Modbus Poll; исходники Modbus Poll не использовались.
@@ -72,7 +77,7 @@ apps/
 - [ ] ASCII-транспорт (заготовки уже в enum)
 - [ ] CSV-логирование значений по времени
 - [ ] Графики трендов per-row
-- [ ] Byte-exact writer `.mbp` (сейчас — канонический семантический round-trip)
+- [x] Byte-exact `.mbp` round-trip: `mbp_doc` хранит файл сегментами (head / строки / closer) и собирает бит-в-бит; правка alias не портит осталь­ные байты
 
 ## Лицензия
 
@@ -145,6 +150,7 @@ apps/
 
 ### Roadmap
 
+- [x] Byte-exact `.mbp` round-trip: `mbp_doc` keeps the file as segments (head / rows / closer) and reassembles it bit-for-bit; editing an alias leaves all other bytes untouched
 - [ ] ASCII transport (enum stubs already in place)
 - [ ] Time-series CSV logging
 - [ ] Per-row trend charts

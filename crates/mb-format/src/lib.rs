@@ -10,6 +10,7 @@
 
 pub mod error;
 pub mod mbp;
+pub mod mbp_doc;
 pub mod mbw;
 pub mod model;
 pub mod util;
