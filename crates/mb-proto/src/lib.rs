@@ -5,6 +5,7 @@
 //! * [`rtu`] — Modbus RTU framing with CRC-16.
 //! * [`crc`] — CRC-16 (poly 0xA001).
 
+pub mod ascii;
 pub mod crc;
 pub mod error;
 pub mod mbap;

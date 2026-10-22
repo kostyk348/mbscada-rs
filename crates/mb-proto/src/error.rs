@@ -54,6 +54,9 @@ pub enum ProtoError {
     UnknownFunction(u8),
     Exception(ExceptionCode),
     Crc { expected: u16, got: u16 },
+    Lrc { expected: u8, got: u8 },
+    NotAsciiFrame,
+    BadAsciiHex(u8),
     BadProtocolId(u16),
     BadValue(String),
     Io(String),
@@ -71,6 +74,11 @@ impl fmt::Display for ProtoError {
             ProtoError::Crc { expected, got } => {
                 write!(f, "crc mismatch: expected {expected:#06x}, got {got:#06x}")
             }
+            ProtoError::Lrc { expected, got } => {
+                write!(f, "lrc mismatch: expected {expected:#04x}, got {got:#04x}")
+            }
+            ProtoError::NotAsciiFrame => write!(f, "not an ASCII frame (no colon)"),
+            ProtoError::BadAsciiHex(c) => write!(f, "bad hex char {:#04x} in ASCII frame", c),
             ProtoError::BadProtocolId(id) => write!(f, "bad protocol id {id}"),
             ProtoError::BadValue(m) => write!(f, "bad value: {m}"),
             ProtoError::Io(m) => write!(f, "io error: {m}"),
