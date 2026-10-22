@@ -169,8 +169,12 @@ pub fn write_mbp(t: &Table) -> Vec<u8> {
     let qty = if t.qty > 0 { t.qty } else { t.rows.len() as u32 };
     push_u32(&mut out, qty);
 
-    // 16 trailing bytes: EOF = tail_offset + 40, so the scan starts exactly here.
+    // 16 trailing bytes, then the closing empty marker (real files end with
+    // one; `MbpDoc::parse` relies on it), plus a 4-byte trailer like the originals.
     out.extend(std::iter::repeat(0u8).take(16));
+    out.extend_from_slice(&MARKER);
+    out.push(0);
+    out.extend_from_slice(&[0u8; 4]);
     out
 }
 

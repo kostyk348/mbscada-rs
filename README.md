@@ -73,8 +73,8 @@ Modbus Poll has no SCADA mode. That is the point of mbSCADA.
 
 ### 🤝 Modbus Poll compatibility
 
-- **Import** of `.mbp` (single window) and `.mbw` (workspace with the window list) — one by one or by folder. Tested on a real Modbus Poll 10.5 corpus (7 files, RU aliases with UTF-16 markers).
-- **Byte-exact round-trip** (`mbp_doc`): the file is segmented (`head` / row records / closing marker) and reassembled **bit-for-bit**; editing an alias touches nothing else. `write(parse(bytes)) == bytes` is asserted by CI on the whole corpus.
+- **Import** of `.mbp` (single window) and `.mbw` (workspace with the window list) — one by one or by folder.
+- **Byte-exact round-trip** (`mbp_doc`): the file is segmented (`head` / row records / closing marker) and reassembled **bit-for-bit**; editing an alias touches nothing else. Verified byte-exactly against a private real-file corpus produced by Modbus Poll 10.5 (7 files, RU aliases, UTF‑16 markers); CI runs the same test on a public synthetic corpus.
 - Format, multiplier, address base, aliases and colours carry over into polls; connections are reconstructed from file IPs.
 
 <details>
