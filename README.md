@@ -16,6 +16,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 [![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![Byte‑exact .mbp](https://img.shields.io/badge/.mbp-byte%E2%80%91exact%20round‑trip-0ea5e9)](#-modbus-poll-compatibility)
 [![ASCII](https://img.shields.io/badge/modbus‑TCP·RTU·ASCII-success)](#%EF%B8%8F-feature-tour)
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade.svg)](https://remade.wiki/projects/mbscada/)
 
 **English** · [Русский](README.ru.md)
 
