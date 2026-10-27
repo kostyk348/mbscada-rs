@@ -35,6 +35,8 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 - 🤝 **Drop-in for your existing configs.** Real Modbus Poll `.mbp` / `.mbw` files import by folder — and a byte-exact round-trip layer (`write(parse(bytes)) == bytes`, proven on real 10.5 files) keeps them intact.
 - 🎨 **32 styled branches per row.** The original gives you two colour rules; here every row gets a first-match rule tree with per-branch dynamic row text («0 → Закрыт, 1 → Открыт»).
 - 📈 **Trends, alarms, CSV.** Per-row sparklines, hi/hi‑hi/lo/lo‑lo alarms, blink styles — and a one-click CSV value log.
+- 🧮 **Computed tags.** Arithmetic on your tags — `{T2 jacket} - {T1 reactor}`, `min(...)`, `pow(...)` — evaluated by the engine every scan and shown in their own table (v1.1).
+- 🗄 **Journal + archive + diagnostics.** Engine events (RX/WR/ERR/SYS) appended to a log file, configurable CSV historian (change-only or interval mode), per-connection/per-poll diagnostics with reconnect counters (v1.1).
 - 🌐 **RU/EN built in.** One switch in the toolbar flips the entire UI; docs ship in both languages.
 - ⚡ **Fast & local.** A multithreaded engine (`mb-engine`) drives all connections concurrently; no telemetry, no cloud, nothing leaves the machine.
 
@@ -50,7 +52,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 </details>
 
-## ⬇ Download v1.0.0
+## ⬇ Download v1.1.0
 
 Prebuilt installers for every platform — no Rust toolchain needed.
 Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
@@ -91,6 +93,13 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 
 Modbus Poll has no SCADA mode. That is the point of mbSCADA.
 
+### 🧮 Computed tags, journal, archive & diagnostics (v1.1)
+
+- **Computed (virtual) tags**: a safe arithmetic evaluator in the engine — `{tag} references`, `p<poll>:<addr>` aliases, `+ - * / % ^`, functions `min / max / avg / abs / sqrt / round / floor / ceil / pow`. Results appear in their own table above the polls (with units and error messages in place), and are archived to CSV together with the live tags.
+- **Event journal to file**: the engine appends every RX / WR / ERR / SYS line (with full timestamps) to the log file configured in «Журнал и архив» — a permanent record of the exchange alongside the in-app log.
+- **Configurable CSV archive**: change-only mode (a row when a value changes) or «all tags by period» mode; the file is stored in the project and automatically resumes on start.
+- **Diagnostics panel**: per connection — TX/RX, errors/timeouts, **reconnects**, last/avg turnaround, time since the last successful exchange, last error; per poll — ok/err counters and its own turnaround.
+
 ### 🤝 Modbus Poll compatibility
 
 - **Import** of `.mbp` (single window) and `.mbw` (workspace with the window list) — one by one or by folder.
@@ -124,7 +133,7 @@ Download an installer for your OS from [**Releases**](https://github.com/kostyk3
 ```bash
 git clone https://github.com/kostyk348/mbscada-rs.git
 cd mbscada-rs
-cargo test                # 60 engine tests
+cargo test                # 68 engine/proto/format tests
 
 # demo slave (no hardware needed): serves registers on 127.0.0.1:502
 cargo run -p mb-sim --example demo_server -- 502
@@ -172,6 +181,10 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Prebuilt release bundles: Windows x64, Linux x86_64 + aarch64, macOS Intel + Apple Silicon (v1.0)
 - ✅ Alarm side panel (ack, history, sound, jump-to-row) + SCADA gauge / toggle-write widgets (v1.1)
 - ✅ One-click RU/EN UI switch, bilingual docs, refreshed screenshots (v1.1)
+- ✅ Computed tags: safe expression engine + own table + editor (v1.1)
+- ✅ Engine event journal to a log file; configurable CSV historian (change-only / interval) that resumes on start (v1.1)
+- ✅ Diagnostics panel: per-poll ok/err stats, reconnect counters, last-success age (v1.1)
+- ✅ Fix: SCADA gauge colored arc overflowed the widget border (v1.1)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
 

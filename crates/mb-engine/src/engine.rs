@@ -1,15 +1,18 @@
 //! Multi-poll engine: one thread per connection, independent scan rates,
-//! live row values, hi/hi-hi/lo/lo-lo alarms, styling rules, stats and a
-//! communication log. Mirrors Modbus Poll's behaviour.
+//! live row values, hi/hi-hi/lo/lo-lo alarms, styling rules, stats,
+//! computed (virtual) tags, an optional event log file and a communication
+//! log. Mirrors Modbus Poll's behaviour.
 
+use crate::expr::Expr;
 use crate::format::{decode, display, Fmt};
-use crate::model::{func_is_read, Connection, Poll};
+use crate::model::{func_is_read, ComputedTag, Connection, Poll};
 use crate::rules::{self, Rule, Severity};
 use crate::transport::{open_transport, Transport};
 use mb_proto::error::ProtoError;
 use mb_proto::{decode_response, Request, Response};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
+use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -28,6 +31,19 @@ pub struct ConnStats {
     pub avg_ms: f64,
     pub online: bool,
     pub last_error: String,
+    /// Successful (re)opens of the transport after the first one.
+    pub reconnects: u64,
+    /// Epoch ms of the last successful exchange (0 = never).
+    pub last_ok_ts: u128,
+}
+
+/// Per-poll diagnostics (success/error counters).
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct PollStats {
+    pub ok: u64,
+    pub err: u64,
+    /// Epoch ms of the last successful poll (0 = never).
+    pub last_ok_ts: u128,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,7 +85,23 @@ pub struct PollView {
     pub fmt: Fmt,
     pub enabled: bool,
     pub last_poll_ms: f64,
+    #[serde(default)]
+    pub stats: PollStats,
     pub rows: Vec<RowView>,
+}
+
+/// One computed (virtual) tag as shown in the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct ComputedView {
+    pub name: String,
+    pub expr: String,
+    pub unit: String,
+    pub value: f64,
+    pub display: String,
+    /// false = expression/compile error, missing tag, or a source tag with
+    /// bad quality — `err` explains it.
+    pub ok: bool,
+    pub err: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,8 +118,21 @@ pub struct Snapshot {
     pub running: bool,
     pub connections: Vec<ConnView>,
     pub polls: Vec<PollView>,
+    #[serde(default)]
+    pub computed: Vec<ComputedView>,
     pub log: Vec<CommEntry>,
     pub ts_ms: u128,
+}
+
+/// Everything `Engine::start_with` needs. Plain `start` fills the defaults
+/// (no computed tags, no log file) for tests and simple embedders.
+pub struct EngineCfg {
+    pub connections: Vec<Connection>,
+    pub polls: Vec<Poll>,
+    pub rules: Vec<Rule>,
+    pub computed: Vec<ComputedTag>,
+    /// Event log file path; `None` disables file logging.
+    pub log_path: Option<String>,
 }
 
 // ------------------------------------------------------------------ inner
@@ -109,9 +154,15 @@ struct Inner {
     rows: HashMap<u32, Vec<RowView>>,
     stats: HashMap<String, ConnStats>,
     poll_ms: HashMap<u32, f64>,
+    poll_stats: HashMap<u32, PollStats>,
     log: VecDeque<CommEntry>,
     cmds: HashMap<String, Sender<Command>>,
     running: bool,
+    /// Computed tags paired with their compiled expression
+    /// (Err = compile error, surfaced verbatim in the snapshot).
+    computed: Vec<(ComputedTag, Result<Expr, String>)>,
+    /// Append-only event log file (None = disabled).
+    log_file: Option<std::fs::File>,
 }
 
 pub struct Engine {
@@ -136,26 +187,77 @@ fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
+/// Days-since-epoch -> (year, month, day); Howard Hinnant's civil algorithm.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Full local timestamp "YYYY-MM-DD HH:MM:SS" for log lines.
+fn now_stamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (y, mo, d) = civil_from_days((secs / 86_400) as i64);
+    let s = secs % 86_400;
+    format!("{y:04}-{mo:02}-{d:02} {:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+}
+
 impl Engine {
+    /// Back-compat wrapper: no computed tags, no log file.
     pub fn start(connections: Vec<Connection>, polls: Vec<Poll>, rules: Vec<Rule>) -> Engine {
+        Self::start_with(EngineCfg {
+            connections,
+            polls,
+            rules,
+            computed: vec![],
+            log_path: None,
+        })
+    }
+
+    pub fn start_with(cfg: EngineCfg) -> Engine {
         let mut conn_map = HashMap::new();
-        for c in connections {
+        for c in cfg.connections {
             conn_map.insert(c.id.clone(), c);
         }
         let mut stats = HashMap::new();
         for id in conn_map.keys() {
             stats.insert(id.clone(), ConnStats::default());
         }
+        // Event log file: append; failures are non-fatal (logging stays off).
+        let log_file = cfg.log_path.as_deref().and_then(|p| {
+            if let Some(dir) = std::path::Path::new(p).parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(p)
+                .ok()
+        });
+        let computed = compile_computed(cfg.computed);
         let inner = Arc::new(Mutex::new(Inner {
             connections: conn_map,
-            polls,
-            rules,
+            polls: cfg.polls,
+            rules: cfg.rules,
             rows: HashMap::new(),
             stats,
             poll_ms: HashMap::new(),
+            poll_stats: HashMap::new(),
             log: VecDeque::new(),
             cmds: HashMap::new(),
             running: true,
+            computed,
+            log_file,
         }));
         let stop = Arc::new(AtomicBool::new(false));
 
@@ -165,6 +267,9 @@ impl Engine {
         };
         conn_ids.sort();
         conn_ids.dedup();
+
+        let n_polls = inner.lock().unwrap().polls.len();
+        engine_event(&inner, &format!("движок запущен: {} соединений, {} опросов", conn_ids.len(), n_polls));
 
         let mut handles = Vec::new();
         for cid in conn_ids {
@@ -179,6 +284,20 @@ impl Engine {
             stop,
             handles,
         }
+    }
+
+    /// Replace computed tags at runtime (UI editor); recompiled immediately.
+    pub fn set_computed(&self, tags: Vec<ComputedTag>) {
+        if let Ok(mut g) = self.inner.lock() {
+            g.computed = compile_computed(tags);
+        }
+    }
+
+    pub fn computed(&self) -> Vec<ComputedTag> {
+        self.inner
+            .lock()
+            .map(|g| g.computed.iter().map(|(t, _)| t.clone()).collect())
+            .unwrap_or_default()
     }
 
     pub fn set_rules(&self, rules: Vec<Rule>) {
@@ -265,19 +384,114 @@ impl Engine {
                     fmt: p.fmt,
                     enabled: p.enabled,
                     last_poll_ms: g.poll_ms.get(&p.id).copied().unwrap_or(0.0),
+                    stats: g.poll_stats.get(&p.id).cloned().unwrap_or_default(),
                     rows: g.rows.get(&p.id).cloned().unwrap_or_default(),
                 }
             })
             .collect();
 
+        let computed = eval_computed(&g);
+
         Snapshot {
             running: g.running,
             connections,
             polls,
+            computed,
             log: g.log.iter().cloned().collect(),
             ts_ms: now_ms(),
         }
     }
+}
+
+fn compile_computed(tags: Vec<ComputedTag>) -> Vec<(ComputedTag, Result<Expr, String>)> {
+    tags.into_iter()
+        .map(|t| {
+            let e = Expr::compile(&t.expr);
+            (t, e)
+        })
+        .collect()
+}
+
+/// Evaluate all computed tags against the latest row values.
+/// Variables: the stable row label (`poll.label_of(addr)`) and a
+/// `p<poll_id>:<addr>` alias; values are engineering units (mult/div/offset
+/// applied), matching what alarms and the UI show.
+fn eval_computed(g: &Inner) -> Vec<ComputedView> {
+    if g.computed.is_empty() {
+        return vec![];
+    }
+    // name -> (scaled value, quality_good)
+    let mut vals: HashMap<String, (f64, bool)> = HashMap::new();
+    for p in &g.polls {
+        if let Some(rows) = g.rows.get(&p.id) {
+            for r in rows {
+                let scaled = r.value * p.mult
+                    / (if p.div == 0.0 { 1.0 } else { p.div })
+                    + p.offset;
+                let good = r.quality == "good";
+                vals.insert(p.label_of(r.addr), (scaled, good));
+                vals.insert(format!("p{}:{}", p.id, r.addr), (scaled, good));
+            }
+        }
+    }
+    g.computed
+        .iter()
+        .map(|(t, e)| {
+            let dec = (t.decimals.min(6)) as usize;
+            let mut bad_quality = false;
+            match e {
+                Err(ce) => ComputedView {
+                    name: t.name.clone(),
+                    expr: t.expr.clone(),
+                    unit: t.unit.clone(),
+                    value: 0.0,
+                    display: "—".into(),
+                    ok: false,
+                    err: ce.clone(),
+                },
+                Ok(ex) => {
+                    let res = ex.eval(&mut |n: &str| match vals.get(n) {
+                        Some((v, good)) => {
+                            if !good {
+                                bad_quality = true;
+                            }
+                            Some(*v)
+                        }
+                        None => None,
+                    });
+                    match res {
+                        Ok(v) if v.is_finite() => ComputedView {
+                            name: t.name.clone(),
+                            expr: t.expr.clone(),
+                            unit: t.unit.clone(),
+                            value: v,
+                            display: format!("{v:.dec$}"),
+                            ok: !bad_quality,
+                            err: if bad_quality { "нет качества у исходного тэга".into() } else { String::new() },
+                        },
+                        Ok(_) => ComputedView {
+                            name: t.name.clone(),
+                            expr: t.expr.clone(),
+                            unit: t.unit.clone(),
+                            value: 0.0,
+                            display: "—".into(),
+                            ok: false,
+                            err: "результат не конечное число".into(),
+                        },
+                        Err(e) => ComputedView {
+                            name: t.name.clone(),
+                            expr: t.expr.clone(),
+                            unit: t.unit.clone(),
+                            value: 0.0,
+                            display: "—".into(),
+                            ok: false,
+                            err: e,
+                        },
+                    }
+                }
+            }
+        })
+        .collect()
 }
 
 impl Drop for Engine {
@@ -286,6 +500,7 @@ impl Drop for Engine {
         if let Ok(mut g) = self.inner.lock() {
             g.running = false;
         }
+        engine_event(&self.inner, "движок остановлен");
         for h in self.handles.drain(..) {
             let _ = h.join();
         }
@@ -298,6 +513,7 @@ impl Snapshot {
             running: false,
             connections: vec![],
             polls: vec![],
+            computed: vec![],
             log: vec![],
             ts_ms: now_ms(),
         }
@@ -436,13 +652,23 @@ fn push_log(inner: &Arc<Mutex<Inner>>, conn: &str, dir: &str, text: String, ok: 
             time: now_hms(),
             conn: conn.to_string(),
             dir: dir.to_string(),
-            text,
+            text: text.clone(),
             ok,
         });
         while g.log.len() > 500 {
             g.log.pop_back();
         }
+        // Same line to the log file, if enabled: "2026-10-27 12:41:02 [RX] Conn: text"
+        if let Some(f) = g.log_file.as_mut() {
+            let mark = if ok { "" } else { "!" };
+            let _ = writeln!(f, "{} [{}{}] {}: {}", now_stamp(), dir, mark, conn, text);
+        }
     }
+}
+
+/// Engine lifecycle events (start/stop) into the comm log + log file.
+fn engine_event(inner: &Arc<Mutex<Inner>>, text: &str) {
+    push_log(inner, "engine", "SYS", text.to_string(), true);
 }
 
 fn update_stats<F: FnOnce(&mut ConnStats)>(inner: &Arc<Mutex<Inner>>, conn_id: &str, f: F) {
@@ -456,6 +682,7 @@ fn update_stats<F: FnOnce(&mut ConnStats)>(inner: &Arc<Mutex<Inner>>, conn_id: &
 fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, rx: Receiver<Command>) {
     let mut tr: Option<Box<dyn Transport>> = None;
     let mut next_due: HashMap<u32, Instant> = HashMap::new();
+    let mut opens: u64 = 0; // successful transport opens (reconnect diagnostics)
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -507,10 +734,17 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
             match open_transport(&conn) {
                 Ok(t) => {
                     tr = Some(t);
+                    opens += 1;
                     update_stats(&inner, &conn_id, |s| {
                         s.online = true;
                         s.last_error.clear();
+                        if opens > 1 {
+                            s.reconnects += 1;
+                        }
                     });
+                    if opens > 1 {
+                        push_log(&inner, &conn.name, "SYS", "связь восстановлена".into(), true);
+                    }
                 }
                 Err(e) => {
                     update_stats(&inner, &conn_id, |s| {
@@ -546,9 +780,13 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                         build_rows(poll, &regs, &g.rules, "good")
                     };
                     let n = rows.len();
+                    let ts = now_ms();
                     if let Ok(mut g) = inner.lock() {
                         g.rows.insert(poll.id, rows);
                         g.poll_ms.insert(poll.id, dt);
+                        let ps = g.poll_stats.entry(poll.id).or_default();
+                        ps.ok += 1;
+                        ps.last_ok_ts = ts;
                         let s = g.stats.get_mut(&conn_id);
                         if let Some(s) = s {
                             s.tx += 1;
@@ -560,6 +798,7 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                                 (s.avg_ms * 9.0 + dt) / 10.0
                             };
                             s.online = true;
+                            s.last_ok_ts = ts;
                         }
                     }
                     push_log(
@@ -594,6 +833,7 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                             })
                             .unwrap_or_default();
                         g.rows.insert(poll.id, bad);
+                        g.poll_stats.entry(poll.id).or_default().err += 1;
                     }
                     push_log(
                         &inner,
