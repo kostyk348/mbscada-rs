@@ -1777,7 +1777,7 @@ dependencies = [
 
 [[package]]
 name = "mb-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "mb-format",
  "mb-proto",
@@ -1789,22 +1789,22 @@ dependencies = [
 
 [[package]]
 name = "mb-format"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "mb-proto"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "mb-sim"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "mb-proto",
 ]
 
 [[package]]
 name = "mbscada"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "mb-engine",
  "mb-format",
