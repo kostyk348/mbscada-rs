@@ -182,18 +182,36 @@
               <option value="lamp">Лампа</option>
               <option value="value">Значение</option>
               <option value="bar">Полоса</option>
+              <option value="gauge">Гейдж</option>
+              <option value="button">Кнопка (запись)</option>
               <option value="text">Текст</option>
             </select>
             <select id="wReg" class="wide"></select>
             <button id="wAdd" class="primary">Добавить элемент</button>
-            <span class="hint">перетаскивай мышью · ✕ удалить</span>
+            <span class="hint">перетаскивай мышью · двойной клик — настройка · ✕ удалить</span>
           </div>
           <div id="canvas" class="canvas"></div>
         </div>
       </section>
 
-      <!-- RIGHT: stats + comm log -->
+      <!-- RIGHT: alarms + stats + comm log -->
       <aside class="side right">
+        <div class="panel alarms">
+          <h3 class="al-head">Аварии <span id="alarmBadge" class="abadge" hidden>0</span>
+            <span class="spacer"></span>
+            <button id="btnAlarmSound" class="mini" title="звук при появлении новой аварии">🔇</button>
+          </h3>
+          <div class="atabs">
+            <div class="atab active" data-at="active">Активные</div>
+            <div class="atab" data-at="hist">История</div>
+          </div>
+          <div id="alarmActive" class="alarmlist"></div>
+          <div id="alarmHist" class="alarmlist" hidden></div>
+          <div class="formbtns">
+            <button id="btnAckAll" class="mini" title="квитировать все активные аварии">Квитировать все</button>
+            <button id="btnAlarmClear" class="mini" title="очистить историю аварий">Очистить историю</button>
+          </div>
+        </div>
         <div class="panel">
           <h3>Статистика</h3>
           <div id="stats" class="stats"></div>
@@ -214,6 +232,17 @@
         <div class="modal-actions">
           <button id="modalOk" class="primary">Записать</button>
           <button id="modalCancel">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wmodal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-title">Настройка элемента</div>
+        <div id="wfields" class="form"></div>
+        <div class="modal-actions">
+          <button id="wmodalOk" class="primary">Сохранить</button>
+          <button id="wmodalCancel">Отмена</button>
         </div>
       </div>
     </div>

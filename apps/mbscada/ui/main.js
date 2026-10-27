@@ -116,6 +116,121 @@ function csvField(v) {
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
+/* --------------------------------------------------------------- alarms -- */
+/* Alarm panel: rows with alarm_level != "ok" surface here, not only as row
+   colours in the table. State machine (active ↔ history, acknowledgement)
+   lives in this session; the engine keeps evaluating levels as before. */
+const AL = { active: {}, hist: [], sound: localStorage.getItem("mbscada.alSound") !== "0", tab: "active" };
+const JUMP = { key: null, until: 0, scrolled: true };
+
+function alKey(pollId, addr) { return pollId + ":" + addr; }
+
+function updateAlarms() {
+  if (!snap) return;
+  const seen = new Set();
+  for (const p of snap.polls) {
+    for (const r of p.rows || []) {
+      if (!r.alarm_level || r.alarm_level === "ok") continue;
+      const key = alKey(p.id, r.addr);
+      seen.add(key);
+      let a = AL.active[key];
+      if (!a) {
+        a = (AL.active[key] = {
+          key, pollId: p.id, poll: p.name, addr: r.addr, disp: r.disp_addr,
+          name: r.name, level: r.alarm_level, msg: r.alarm_msg || r.alarm_level,
+          display: r.display, unit: r.unit, quality: r.quality,
+          since: Date.now(), ack: false,
+        });
+        if (AL.sound) beep();
+      } else {
+        a.poll = p.name; a.name = r.name; a.display = r.display;
+        a.msg = r.alarm_msg || r.alarm_level; a.level = r.alarm_level;
+        a.quality = r.quality;
+      }
+    }
+  }
+  // Авария пропала — уходит в историю с длительностью.
+  for (const key of Object.keys(AL.active)) {
+    if (seen.has(key)) continue;
+    const a = AL.active[key];
+    delete AL.active[key];
+    a.cleared = Date.now();
+    a.dur = a.cleared - a.since;
+    AL.hist.unshift(a);
+    if (AL.hist.length > 100) AL.hist.pop();
+  }
+}
+
+function renderAlarms() {
+  const badge = $("alarmBadge");
+  if (badge) {
+    const unacked = Object.values(AL.active).filter((a) => !a.ack).length;
+    badge.hidden = unacked === 0;
+    badge.textContent = unacked;
+  }
+  const act = $("alarmActive"), hist = $("alarmHist");
+  if (!act || !hist) return;
+  act.innerHTML = "";
+  const items = Object.values(AL.active).sort((a, b) => (a.ack - b.ack) || (b.since - a.since));
+  if (!items.length) act.innerHTML = `<div class="empty">активных аварий нет</div>`;
+  for (const a of items) {
+    const el = document.createElement("div");
+    el.className = "al-item lv-" + a.level + (a.ack ? " ack" : "");
+    el.innerHTML = `<div class="al-top"><span class="al-dot"></span>
+        <span class="al-time">${hms(a.since)}</span>
+        <b class="grow">${esc(a.name)}</b>
+        <span class="mono">${esc(a.display)}${a.unit ? " " + esc(a.unit) : ""}</span></div>
+      <div class="al-bot"><span class="grow">${esc(a.msg)}${a.quality === "bad" ? ' · <span class="bad">нет связи</span>' : ""}</span>
+        <span class="sub">${esc(a.poll)} @${esc(a.disp)}</span></div>`;
+    el.title = "клик — перейти к строке в таблице";
+    el.onclick = () => alarmJump(a.key);
+    el.appendChild(miniBtn(a.ack ? "✓" : "квит.", (ev) => { ev.stopPropagation(); a.ack = true; renderAlarms(); }));
+    act.appendChild(el);
+  }
+  hist.innerHTML = "";
+  if (!AL.hist.length) hist.innerHTML = `<div class="empty">история пуста</div>`;
+  for (const a of AL.hist) {
+    const el = document.createElement("div");
+    el.className = "al-item lv-" + a.level + " ack hist";
+    el.innerHTML = `<div class="al-top"><span class="al-dot"></span>
+        <b class="grow">${esc(a.name)}</b><span class="sub">${esc(a.msg)}</span></div>
+      <div class="al-bot"><span class="sub">${hms(a.since)} → ${hms(a.cleared)} · ${fmtDur(a.dur)}</span>
+        <span class="sub">${esc(a.poll)} @${esc(a.disp)}</span></div>`;
+    hist.appendChild(el);
+  }
+}
+
+function alarmJump(key) {
+  JUMP.key = key; JUMP.until = Date.now() + 2500; JUMP.scrolled = false;
+  const tab = document.querySelector('.tab[data-view="tables"]');
+  if (tab) tab.click();
+  render(); // перерисовать немедленно — затем подсветка и скролл в renderGrid
+}
+
+function beep() {
+  try {
+    const ctx = beep.ctx || (beep.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.07, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.35);
+  } catch { /* аудио недоступно */ }
+}
+
+function hms(t) {
+  const d = new Date(t);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, "0")).join(":");
+}
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + "с";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "м" + (s % 60) + "с";
+  return Math.floor(m / 60) + "ч" + (m % 60) + "м";
+}
+
 /* ------------------------------------------------------------ bootstrap -- */
 async function boot() {
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
@@ -248,6 +363,8 @@ function render() {
   renderGrid();
   renderStats();
   renderLog();
+  updateAlarms();
+  renderAlarms();
   fillSelectors();
   renderSchema();
   // Старт/Стоп отражают фактическое состояние движка.
@@ -416,6 +533,16 @@ function renderGrid() {
     for (const r of rows) {
       const tr = document.createElement("tr");
       tr.className = "row" + (r.blink ? " blink" : "");
+      const rowKey = p.id + ":" + r.addr;
+      tr.dataset.key = rowKey;
+      // Подсветка строки, к которой перешли из панели аварий.
+      if (JUMP.key === rowKey && Date.now() < JUMP.until) {
+        tr.classList.add("flashrow");
+        if (!JUMP.scrolled) {
+          JUMP.scrolled = true;
+          setTimeout(() => tr.scrollIntoView({ block: "center", behavior: "smooth" }), 0);
+        }
+      }
       if (r.fg) tr.style.color = r.fg;
       if (r.bg) tr.style.background = r.bg;
       const alarm = r.alarm_level && r.alarm_level !== "ok" ? "⚠ " + esc(r.alarm_msg || r.alarm_level) : "";
@@ -712,6 +839,33 @@ function wireForms() {
   if (bp) bp.onclick = refreshPorts;
   const bt = $("btnTestConn");
   if (bt) bt.onclick = testConn;
+
+  // Панель аварий: звук, квитирование, история, вкладки.
+  const bs = $("btnAlarmSound");
+  if (bs) {
+    bs.textContent = AL.sound ? "🔊" : "🔇";
+    bs.onclick = () => {
+      AL.sound = !AL.sound;
+      localStorage.setItem("mbscada.alSound", AL.sound ? "1" : "0");
+      bs.textContent = AL.sound ? "🔊" : "🔇";
+      if (AL.sound) beep();
+    };
+  }
+  const ba = $("btnAckAll");
+  if (ba) ba.onclick = () => { for (const a of Object.values(AL.active)) a.ack = true; renderAlarms(); };
+  const bc2 = $("btnAlarmClear");
+  if (bc2) bc2.onclick = () => { AL.hist = []; renderAlarms(); };
+  document.querySelectorAll(".atab").forEach((t) => {
+    t.onclick = () => {
+      document.querySelectorAll(".atab").forEach((x) => x.classList.remove("active"));
+      t.classList.add("active");
+      AL.tab = t.dataset.at;
+      const act = $("alarmActive"), hist = $("alarmHist");
+      if (act) act.hidden = AL.tab !== "active";
+      if (hist) hist.hidden = AL.tab !== "hist";
+    };
+  });
+
   const am = $("addrMode");
   if (am) am.onchange = () => { applyAddrMode(am.value); apply(); };
 
@@ -878,7 +1032,7 @@ function addWidget() {
   const poll = findCfgPoll(pid);
   cfg.mimic = cfg.mimic || [];
   const n = cfg.mimic.length;
-  cfg.mimic.push({
+  const item = {
     id: Date.now(),
     type: $("wType").value,
     x: 30 + (n % 6) * 150,
@@ -886,7 +1040,12 @@ function addWidget() {
     poll: pid,
     addr,
     label: poll ? regLabel(poll, addr) : String(addr),
-  });
+  };
+  // Настраиваемые дефолты по типу — всё правится двойным кликом.
+  if (item.type === "gauge") { item.min = 0; item.max = 100; item.unit = ""; }
+  if (item.type === "bar") { item.min = 0; item.max = 100; }
+  if (item.type === "button") { item.onVal = 1; item.offVal = 0; item.btnLabel = ""; }
+  cfg.mimic.push(item);
   renderSchema();
 }
 
@@ -915,8 +1074,22 @@ function renderSchema() {
       const txt = row ? `${row.display} ${row.unit || ""}` : "—";
       el.innerHTML = `<div class="wval">${esc(txt)}</div><div class="wlabel">${esc(name)}</div>`;
     } else if (w.type === "bar") {
-      const v = row ? Math.max(0, Math.min(100, Number(row.value) || 0)) : 0;
+      const min = Number.isFinite(w.min) ? w.min : 0;
+      const max = Number.isFinite(w.max) ? w.max : 100;
+      const v = row ? Math.max(0, Math.min(100, ((Number(row.value) || 0) - min) / Math.max(max - min, 1e-9) * 100)) : 0;
       el.innerHTML = `<div class="wlabel">${esc(name)} ${row ? esc(row.display) : "—"}</div><div class="bar"><i style="width:${v}%"></i></div>`;
+    } else if (w.type === "gauge") {
+      const min = Number.isFinite(w.min) ? w.min : 0;
+      const max = Number.isFinite(w.max) ? w.max : 100;
+      const v = row ? (Number(row.value) || 0) : min;
+      el.innerHTML = gaugeSvg(v, min, max, row && row.alarm_level) +
+        `<div class="wlabel">${esc(name)}${w.unit ? " · " + esc(w.unit) : ""}</div>`;
+    } else if (w.type === "button") {
+      const onV = w.onVal != null ? Number(w.onVal) : 1;
+      const on = row && (row.raw || 0) === onV;
+      el.classList.add("wbutton");
+      el.innerHTML = `<div class="mbtn${on ? " on" : ""}">${esc(w.btnLabel || (on ? "ВКЛ" : "ВЫКЛ"))}</div><div class="wlabel">${esc(name)}</div>`;
+      el.onclick = (ev) => { if (!ev.target.classList.contains("wdel")) buttonWrite(w); };
     } else {
       el.innerHTML = `<div class="wlabel">${esc(name)}</div>`;
     }
@@ -929,9 +1102,72 @@ function renderSchema() {
       renderSchema();
     };
     el.appendChild(del);
+    el.ondblclick = () => openWidgetModal(w);
     el.onmousedown = (ev) => startDrag(ev, w, el);
     canvas.appendChild(el);
   }
+}
+
+function gaugeSvg(v, min, max, level) {
+  const span = Math.max(max - min, 1e-9);
+  const t = Math.max(0, Math.min(1, ((Number(v) || 0) - min) / span));
+  const cx = 90, cy = 82, r = 68;
+  const th = Math.PI * (1 - t);
+  const x = cx + r * Math.cos(th), y = cy - r * Math.sin(th);
+  const large = t > 0.5 ? 1 : 0;
+  const col = level === "hihi" || level === "hi" ? "#ef4444"
+    : level === "lolo" || level === "lo" ? "#3b82f6" : "#22d3ee";
+  const txt = Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 100) / 100) : "—";
+  return `<svg width="150" height="86" viewBox="0 0 180 100">
+    <path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#1e293b" stroke-width="13" stroke-linecap="round"/>
+    ${t > 0.004 ? `<path d="M ${cx - r} ${cy} A ${r} ${r} 0 ${large} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="13" stroke-linecap="round"/>` : ""}
+    <text x="90" y="96" text-anchor="middle" class="gtxt">${esc(txt)}</text>
+  </svg>`;
+}
+
+async function buttonWrite(w) {
+  if (!hasTauri) { footer("запись доступна только в приложении", true); return; }
+  const row = liveMap()[w.poll + ":" + w.addr] || null;
+  const onV = w.onVal != null ? Number(w.onVal) : 1;
+  const offV = w.offVal != null ? Number(w.offVal) : 0;
+  const cur = row ? (row.raw || 0) : null;
+  // Тумблер: если сейчас «вкл» — пишем «выкл», и наоборот.
+  const target = cur === onV ? offV : onV;
+  try {
+    await invoke("write_value", { pollId: w.poll, addr: w.addr, value: target & 0xffff });
+    footer(`схема: записано @${w.addr} = ${target}`);
+    refresh();
+  } catch (e) { footer(String(e), true); }
+}
+
+/* Двойной клик по элементу схемы — настройка: подпись, диапазоны, значения
+   кнопки. Поля собираются по типу; сохраняется в cfg.mimic. */
+function openWidgetModal(w) {
+  const fields = [["label", "Подпись", w.label || ""]];
+  if (w.type === "bar" || w.type === "gauge") {
+    fields.push(["min", "Минимум", w.min != null ? w.min : 0]);
+    fields.push(["max", "Максимум", w.max != null ? w.max : 100]);
+  }
+  if (w.type === "gauge") fields.push(["unit", "Единицы", w.unit || ""]);
+  if (w.type === "button") {
+    fields.push(["onVal", "Значение «вкл»", w.onVal != null ? w.onVal : 1]);
+    fields.push(["offVal", "Значение «выкл»", w.offVal != null ? w.offVal : 0]);
+    fields.push(["btnLabel", "Надпись", w.btnLabel || ""]);
+  }
+  const box = $("wfields");
+  box.innerHTML = fields.map(([id, lab, val]) =>
+    `<label>${esc(lab)} <input id="wf_${id}" value="${esc(val)}" /></label>`).join("");
+  $("wmodal").hidden = false;
+  $("wmodalOk").onclick = () => {
+    for (const [id] of fields) {
+      const raw = $("wf_" + id).value;
+      if (id === "label" || id === "btnLabel" || id === "unit") w[id] = raw;
+      else w[id] = Number(raw);
+    }
+    $("wmodal").hidden = true;
+    renderSchema();
+  };
+  $("wmodalCancel").onclick = () => { $("wmodal").hidden = true; };
 }
 
 function startDrag(ev, w, el) {

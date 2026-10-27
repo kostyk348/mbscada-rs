@@ -170,7 +170,7 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Prebuilt release bundles: Windows x64, Linux x86_64 + aarch64, macOS Intel + Apple Silicon (v1.0)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
-- ⬜ Alarm panel: active alarms pinned to a side panel, with ack/history
+- ✅ Alarm side panel: active alarms with ack, history, sound and jump-to-row (v1.1)
 
 ## ⁇ FAQ
 
@@ -199,3 +199,4 @@ Issues and PRs welcome. The engine is test-first: `crates/mb-engine`, `crates/mb
 [Download](https://github.com/kostyk348/mbscada-rs/releases/latest) · [Build it](#-getting-started) · [Roadmap](#-roadmap) · [License (MIT)](LICENSE)
 
 </div>
+- ✅ SCADA widgets: gauge and toggle-write button, per-widget settings (v1.1)
