@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04 # x86_64, older glibc for wider AppImage compat
+          - os: ubuntu-22.04-arm # aarch64 (free arm runner for public repos)
+          - os: windows-latest # x86_64 MSVC
+          - os: macos-latest # aarch64 (Apple Silicon)
+          - os: macos-13 # x86_64 (Intel)
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux deps (Tauri v2 + serialport)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            libudev-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/mbscada
+          tagName: v__VERSION__
+          releaseName: 'mbSCADA v__VERSION__'
+          releaseBody: 'Installers and portable binaries for all supported platforms. See the assets below.'
+          releaseDraft: false
+          prerelease: false
