@@ -27,6 +27,7 @@
         <button id="btnStart" class="primary" data-i="start" data-it="start_title">▶ Старт</button>
         <button id="btnStop" data-i="stop" data-it="stop_title">■ Стоп</button>
         <button id="csvBtn" data-it="csv_title" title="лог значений в CSV (пишутся только изменившиеся строки)">CSV</button>
+        <button id="btnWatch" data-i="watch_btn" data-it="watch_btn_title">👁 Параметры</button>
         <span class="sep"></span>
         <button id="btnSave" data-i="save" data-it="save_title">Сохранить</button>
         <button id="btnLoad" data-i="load" data-it="load_title">Открыть</button>
@@ -257,6 +258,23 @@
     </main>
 
     <footer id="errbar" class="errbar" data-i="footer_empty">нет соединений — добавьте соединение (TCP или COM) и опрос со своими адресами</footer>
+
+    <!-- Floating parameter watch window: pinned registers / computed tags with
+         big live values, alarm colors, session min/max, jump-to-row. -->
+    <div id="watchwin" class="watchwin" hidden>
+      <div id="watchDrag" class="whead">
+        <span class="wtitle">👁 <span data-i="watch_title">Просмотр параметров</span></span>
+        <span class="spacer"></span>
+        <button id="watchReset" class="mini" data-it="watch_reset_title" title="сбросить min/max">⟲</button>
+        <button id="watchClose" class="mini" data-it="watch_close_title" title="закрыть окно">✕</button>
+      </div>
+      <div class="wpick">
+        <select id="watchPick" class="wide"></select>
+        <button id="watchAdd" class="mini primary" data-it="watch_add_title" title="добавить выбранный параметр">➕</button>
+      </div>
+      <div id="watchList" class="wlist"></div>
+      <div class="whint sub" data-i="watch_hint">двойной клик по имени — своя подпись · клик по значению — перейти к регистру</div>
+    </div>
 
     <div id="modal" class="modal" hidden>
       <div class="modal-box">
