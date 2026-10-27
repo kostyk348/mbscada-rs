@@ -17,6 +17,7 @@ fn conn(id: &str, kind: ConnKind, port: u16) -> Connection {
         port,
         serial: Default::default(),
         timeout_ms: 500,
+        slave: 1,
     }
 }
 

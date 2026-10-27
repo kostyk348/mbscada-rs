@@ -1783,6 +1783,7 @@ dependencies = [
  "mb-proto",
  "mb-sim",
  "serde",
+ "serde_json",
  "serialport",
 ]
 
