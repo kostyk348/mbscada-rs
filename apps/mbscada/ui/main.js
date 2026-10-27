@@ -320,6 +320,188 @@ function fmtDur(ms) {
   return Math.floor(m / 60) + t("dur_h") + (m % 60) + t("dur_m");
 }
 
+/* --------------------------------------------------------- watch window -- */
+/* Floating "viewable parameters" window: pin any register (or a computed tag)
+   and get a big live readout with alarm colours, session min/max and
+   jump-to-row. Items are references (poll id + addr, or computed tag name)
+   resolved from the snapshot at render time, so table renames propagate
+   automatically. The item list persists in the project (cfg.watch); window
+   visibility and position are per-workstation (localStorage). */
+const WATCH = { stats: {}, pos: null, hover: false };
+let wdrag = null;
+
+function watchCfg() {
+  if (!cfg.watch || typeof cfg.watch !== "object") cfg.watch = {};
+  if (!Array.isArray(cfg.watch.items)) cfg.watch.items = [];
+  return cfg.watch;
+}
+
+function watchKey(it) { return it.kind === "calc" ? "calc:" + it.name : it.poll + ":" + it.addr; }
+
+function watchPlace() {
+  const win = $("watchwin");
+  if (win && WATCH.pos) { win.style.left = WATCH.pos.x + "px"; win.style.top = WATCH.pos.y + "px"; }
+}
+
+function watchSavePos() { localStorage.setItem("mbscada.watchPos", JSON.stringify(WATCH.pos)); }
+
+// Restores window position and (re)opens it if it was open last session.
+function watchLoadPos() {
+  try { WATCH.pos = JSON.parse(localStorage.getItem("mbscada.watchPos") || "null"); } catch { WATCH.pos = null; }
+  try { if (localStorage.getItem("mbscada.watchOpen") === "1") watchToggle(true); } catch { /* no storage */ }
+}
+
+function watchToggle(force) {
+  const win = $("watchwin");
+  if (!win) return;
+  const open = force != null ? !!force : !!win.hidden;
+  win.hidden = !open;
+  localStorage.setItem("mbscada.watchOpen", open ? "1" : "0");
+  const b = $("btnWatch");
+  if (b) b.classList.toggle("accent", open);
+  if (open) {
+    if (!WATCH.pos) {
+      WATCH.pos = { x: Math.max(10, window.innerWidth - 352), y: 62 };
+    }
+    watchPlace();
+    watchFillPicker();
+    renderWatch();
+  }
+}
+
+function watchFillPicker() {
+  const sel = $("watchPick");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = "";
+  for (const p of cfg.polls) {
+    const step = stepOf(p.fmt);
+    const n = Math.max(1, Math.floor((p.qty || 1) / step));
+    const g = document.createElement("optgroup");
+    g.label = p.name;
+    for (let i = 0; i < n; i++) {
+      const addr = (p.start || 0) + i * step;
+      const o = document.createElement("option");
+      o.value = "reg:" + p.id + ":" + addr;
+      o.textContent = addr + " — " + regLabel(p, addr);
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  if ((cfg.computed || []).length) {
+    const g = document.createElement("optgroup");
+    g.label = t("watch_group_calc");
+    for (const c of cfg.computed) {
+      const o = document.createElement("option");
+      o.value = "calc:" + c.name;
+      o.textContent = "∑ " + c.name;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+
+function watchAdd() {
+  const v = $("watchPick").value;
+  if (!v) { footer(t("pick_reg_first"), true); return; }
+  const items = watchCfg().items;
+  if (items.length >= 32) { footer(t("watch_limit"), true); return; }
+  let it;
+  if (v.startsWith("calc:")) it = { kind: "calc", name: v.slice(5) };
+  else {
+    const [pid, addr] = v.slice(4).split(":").map(Number);
+    it = { kind: "reg", poll: pid, addr };
+  }
+  if (items.some((x) => watchKey(x) === watchKey(it))) { footer(t("watch_already"), true); return; }
+  items.push(it);
+  apply();
+}
+
+function watchRemove(it) {
+  const items = watchCfg().items;
+  const i = items.findIndex((x) => watchKey(x) === watchKey(it));
+  if (i >= 0) items.splice(i, 1);
+  delete WATCH.stats[watchKey(it)];
+  apply();
+}
+
+// Live state of one watched item, resolved from the snapshot every tick.
+function watchResolve(it) {
+  if (it.kind === "calc") {
+    const c = ((snap && snap.computed) || []).find((x) => x.name === it.name);
+    return {
+      name: it.caption || it.name, src: t("watch_src_calc"),
+      display: c ? c.display : "—", unit: c && c.unit ? c.unit : "",
+      level: "", fg: null, bg: null, blink: false,
+      quality: c ? (c.ok ? "good" : "bad") : "off", stale: !c,
+      num: c ? parseFloat(c.display) : NaN, pollId: null, addr: null,
+    };
+  }
+  const p = findCfgPoll(it.poll);
+  const sp = snap ? snap.polls.find((x) => x.id === it.poll) : null;
+  const row = sp && sp.rows ? sp.rows.find((r) => r.addr === it.addr) : null;
+  return {
+    name: it.caption || (p ? regLabel(p, it.addr) : `p${it.poll}@${it.addr}`),
+    src: p ? p.name + " @" + dispAddr(p, it.addr) : t("watch_src_lost"),
+    display: row ? row.display : "—",
+    unit: row && row.unit ? row.unit : p && p.unit ? p.unit : "",
+    level: row && row.alarm_level && row.alarm_level !== "ok" ? row.alarm_level : "",
+    fg: row ? row.fg : null, bg: row ? row.bg : null, blink: row ? !!row.blink : false,
+    quality: row ? row.quality : "off", stale: !p || !row,
+    num: row ? parseFloat(row.display) : NaN, pollId: it.poll, addr: it.addr,
+  };
+}
+
+function renderWatch() {
+  const win = $("watchwin"), list = $("watchList");
+  if (!win || !list || win.hidden) return;
+  // Не перерисовываем под курсором — иначе dblclick по имени рвётся.
+  if (WATCH.hover) return;
+  const items = watchCfg().items;
+  list.innerHTML = "";
+  if (!items.length) { list.innerHTML = `<div class="empty">${esc(t("watch_none"))}</div>`; return; }
+  for (const it of items) {
+    const key = watchKey(it);
+    const v = watchResolve(it);
+    let st = WATCH.stats[key];
+    if (!st) st = (WATCH.stats[key] = { min: Infinity, max: -Infinity });
+    if (Number.isFinite(v.num) && v.quality !== "off") {
+      if (v.num < st.min) st.min = v.num;
+      if (v.num > st.max) st.max = v.num;
+    }
+    const el = document.createElement("div");
+    el.className = "wparam" + (v.level ? " lv-" + v.level : "") +
+      (v.quality === "bad" ? " q-bad" : "") + (v.stale ? " stale" : "") + (v.blink ? " blink" : "");
+    if (v.fg) el.style.color = v.fg;
+    if (v.bg) el.style.background = v.bg;
+    const unit = v.unit ? `<span class="wp-unit">${esc(v.unit)}</span>` : "";
+    const mn = Number.isFinite(st.min) ? String(st.min) : "—";
+    const mx = Number.isFinite(st.max) ? String(st.max) : "—";
+    const q = v.quality === "bad" ? `<span class="bad">${esc(t("al_bad_conn"))}</span>` : "";
+    el.innerHTML = `<div class="wp-top"><span class="wp-name">${esc(v.name)}</span><span class="wp-src">${esc(v.src)}</span></div>
+      <div class="wp-val" title="${esc(t("al_jump_hint"))}">${esc(v.display)}${unit}</div>
+      <div class="wp-bot"><span>${t("watch_min")} ${esc(mn)}</span><span>${t("watch_max")} ${esc(mx)}</span>${q}</div>`;
+    if (v.pollId != null) {
+      el.querySelector(".wp-val").onclick = (ev) => { ev.stopPropagation(); watchJump(v.pollId, v.addr); };
+    } else {
+      el.querySelector(".wp-val").style.cursor = "default";
+    }
+    el.title = t("watch_cap_hint");
+    el.ondblclick = () => {
+      openValueModal(t("watch_cap_title") + "\n" + v.name, it.caption || "", (val) => {
+        it.caption = String(val).trim();
+        if (!it.caption) delete it.caption;
+        apply();
+      }, t("m_save"));
+    };
+    el.appendChild(miniBtn("✕", (ev) => { ev.stopPropagation(); watchRemove(it); }));
+    list.appendChild(el);
+  }
+}
+
+function watchJump(pollId, addr) { alarmJump(pollId + ":" + addr); }
+
 // Подстановка {ключей} в словарные строки: tfmt("write_title", {addr: 5, ...})
 function tfmt(key, vars) {
   let s = t(key);
@@ -333,6 +515,7 @@ async function boot() {
   if (!cfg.logfile) cfg.logfile = { enabled: false, path: "" };
   if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
+  watchCfg();
   window.LANG = window.i18nLang();
   const ls = $("langSel");
   if (ls) {
@@ -348,6 +531,7 @@ async function boot() {
   await refreshPorts();
   wireForms();
   await loadUiState();
+  watchLoadPos();
   setInterval(refresh, 300);
   refresh();
   if (!hasTauri) {
@@ -504,6 +688,7 @@ function render() {
   renderLog();
   updateAlarms();
   renderAlarms();
+  renderWatch();
   fillSelectors();
   renderSchema();
   // Старт/Стоп отражают фактическое состояние движка.
@@ -782,6 +967,13 @@ function fillSelectors() {
     pConn.innerHTML = conns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   }
   fillRegSelects();
+  // Picker окна параметров: перестраиваем при изменении опросов/тэгов.
+  const wp = $("watchPick");
+  if (wp) {
+    const wsig = cfg.polls.map((p) => `${p.id}:${p.start}:${p.qty}`).join("|") +
+      "#" + (cfg.computed || []).map((c) => c.name).join(",");
+    if (wp.dataset.sig !== wsig) { wp.dataset.sig = wsig; watchFillPicker(); }
+  }
 }
 
 function stepOf(fmt) {
@@ -888,20 +1080,23 @@ async function writeRow(poll, row) {
   );
 }
 
-function openValueModal(title, value, cb) {
-  const m = $("modal"), inp = $("modalInput");
+function openValueModal(title, value, cb, okLabel) {
+  const m = $("modal"), inp = $("modalInput"), okBtn = $("modalOk");
+  const prevOk = okBtn.textContent;
+  if (okLabel) okBtn.textContent = okLabel;
   $("modalTitle").textContent = title;
   inp.value = value;
   m.hidden = false;
   setTimeout(() => { inp.focus(); inp.select(); }, 0);
-  const done = (ok) => {
+  const done = (okPressed) => {
     m.hidden = true;
-    $("modalOk").onclick = null;
+    okBtn.textContent = prevOk;
+    okBtn.onclick = null;
     $("modalCancel").onclick = null;
     inp.onkeydown = null;
-    if (ok) cb(inp.value);
+    if (okPressed) cb(inp.value);
   };
-  $("modalOk").onclick = () => done(true);
+  okBtn.onclick = () => done(true);
   $("modalCancel").onclick = () => done(false);
   inp.onkeydown = (e) => {
     if (e.key === "Enter") done(true);
@@ -945,6 +1140,7 @@ async function loadProject() {
     if (!cfg.logfile) cfg.logfile = { enabled: false, path: "" };
     if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
     if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
+    watchCfg();
     await apply();
     footer(t("loaded") + sel[0]);
   } catch (e) { footer(String(e), true); }
@@ -1049,6 +1245,30 @@ function wireForms() {
       if (act) act.hidden = AL.tab !== "active";
       if (hist) hist.hidden = AL.tab !== "hist";
     };
+  });
+
+  // Окно просматриваемых параметров: открыть/закрыть, сброс min/max,
+  // добавить выбранный параметр, пауза перерисовки под курсором.
+  const bw = $("btnWatch");
+  if (bw) bw.onclick = () => watchToggle();
+  const wc = $("watchClose");
+  if (wc) wc.onclick = () => watchToggle(false);
+  const wr = $("watchReset");
+  if (wr) wr.onclick = () => { WATCH.stats = {}; renderWatch(); };
+  const wa = $("watchAdd");
+  if (wa) wa.onclick = watchAdd;
+  const wl = $("watchList");
+  if (wl) {
+    wl.addEventListener("mouseenter", () => { WATCH.hover = true; });
+    wl.addEventListener("mouseleave", () => { WATCH.hover = false; });
+  }
+  const wd = $("watchDrag");
+  if (wd) wd.addEventListener("mousedown", (ev) => {
+    if (ev.target.tagName === "BUTTON") return;
+    const r = $("watchwin").getBoundingClientRect();
+    WATCH.pos = { x: r.left, y: r.top };
+    wdrag = { sx: ev.clientX, sy: ev.clientY, ox: r.left, oy: r.top };
+    ev.preventDefault();
   });
 
   const am = $("addrMode");
@@ -1400,12 +1620,23 @@ function startDrag(ev, w, el) {
   ev.preventDefault();
 }
 window.addEventListener("mousemove", (ev) => {
+  if (wdrag) {
+    WATCH.pos = {
+      x: Math.max(0, Math.min(window.innerWidth - 90, wdrag.ox + ev.clientX - wdrag.sx)),
+      y: Math.max(0, Math.min(window.innerHeight - 60, wdrag.oy + ev.clientY - wdrag.sy)),
+    };
+    watchPlace();
+    return;
+  }
   if (!drag) return;
   drag.w.x = Math.max(0, drag.ox + (ev.clientX - drag.sx));
   drag.w.y = Math.max(0, drag.oy + (ev.clientY - drag.sy));
   drag.el.style.left = drag.w.x + "px";
   drag.el.style.top = drag.w.y + "px";
 });
-window.addEventListener("mouseup", () => { if (drag) drag = null; });
+window.addEventListener("mouseup", () => {
+  if (wdrag) { wdrag = null; watchSavePos(); }
+  drag = null;
+});
 
 boot();

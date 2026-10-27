@@ -13,7 +13,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/mbscada-rs)](https://github.com/kostyk348/mbscada-rs/releases/latest)
 [![CI](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-60%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-68%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust&logoColor=black)](https://rustup.rs/)
 [![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
@@ -35,6 +35,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 - 🤝 **Drop-in for your existing configs.** Real Modbus Poll `.mbp` / `.mbw` files import by folder — and a byte-exact round-trip layer (`write(parse(bytes)) == bytes`, proven on real 10.5 files) keeps them intact.
 - 🎨 **32 styled branches per row.** The original gives you two colour rules; here every row gets a first-match rule tree with per-branch dynamic row text («0 → Закрыт, 1 → Открыт»).
 - 📈 **Trends, alarms, CSV.** Per-row sparklines, hi/hi‑hi/lo/lo‑lo alarms, blink styles — and a one-click CSV value log.
+- 👁 **Parameter watch window.** Pin the registers you actually watch — or computed tags — into a floating window with big live values, alarm colours and session min/max (v1.2).
 - 🧮 **Computed tags.** Arithmetic on your tags — `{T2 jacket} - {T1 reactor}`, `min(...)`, `pow(...)` — evaluated by the engine every scan and shown in their own table (v1.1).
 - 🗄 **Journal + archive + diagnostics.** Engine events (RX/WR/ERR/SYS) appended to a log file, configurable CSV historian (change-only or interval mode), per-connection/per-poll diagnostics with reconnect counters (v1.1).
 - 🌐 **RU/EN built in.** One switch in the toolbar flips the entire UI; docs ship in both languages.
@@ -49,6 +50,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 |---|---|
 | **Live tables + alarm panel** | <img src="docs/img/app-en.png" width="100%"> |
 | **SCADA mimic + widgets** | <img src="docs/img/scada-en.png" width="100%"> |
+| **Parameter watch window** | <img src="docs/img/watch-en.png" width="100%"> |
 
 </details>
 
@@ -84,6 +86,14 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 - First matching branch wins — the classic «Rule 1 over Rule 2» becomes a full priority list.
 - **Dynamic row text** per branch: the row label is replaced when a branch fires (state machines live in the table header).
 - **Alarm side panel**: active alarms surface as cards — severity, fired-at, live value, message — acknowledge one or all, cleared alarms drop to **history** with durations, optional **beep**, and a click jumps to the table row.
+
+### 👁 Parameter watch window (v1.2)
+
+<img src="docs/img/watch-en.png" alt="Floating parameter watch window with big live values, alarm colors and session min/max" width="55%">
+
+- Pin the parameters you actually watch — **any register from any poll, or computed tags** — into a floating window over the workspace (👁 Watch in the toolbar).
+- Big live values in engineering units, coloured by the rule tree (alarm fg/bg carry over from the table row), session **min / max** per card, quality and «no link» markers.
+- The pinned set is stored **in the project** (shared with Save/Open); the window position is remembered per workstation. Double-click a card to give it a custom caption, ✕ unpins, ⟲ resets min/max, clicking a value jumps to the table row.
 
 ### 🗺 SCADA mode (mimic diagrams)
 
@@ -157,7 +167,7 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 │  src-tauri: dialogs, project JSON, CSV append, engine restarts     │
 ├────────────────────────────────────────────────────────────────────┤
 │  UI (vanilla JS)                                                   │
-│  tables · rule editor (32 branches) · SCADA editor · traffic log   │
+│  tables · rules (32) · SCADA editor · watch window · traffic log   │
 ├────────────────────────────────────────────────────────────────────┤
 │  crates/                                                           │
 │  mb-proto    PDU encode/decode · MBAP · RTU+CRC · ASCII ':'+LRC     │
@@ -185,6 +195,7 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Engine event journal to a log file; configurable CSV historian (change-only / interval) that resumes on start (v1.1)
 - ✅ Diagnostics panel: per-poll ok/err stats, reconnect counters, last-success age (v1.1)
 - ✅ Fix: SCADA gauge colored arc overflowed the widget border (v1.1)
+- ✅ Parameter watch window: floating panel of pinned registers / computed tags — big live values, alarm colours, session min/max, custom captions, jump-to-row (v1.2)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
 
