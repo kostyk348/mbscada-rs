@@ -20,6 +20,8 @@
 [![ASCII](https://img.shields.io/badge/modbus‑TCP·RTU·ASCII-success)](#-тур-по-возможностям)
 
 **Русский** · [English](README.md)
+**🌐 Сайт проекта:** [kostyk348.github.io/mbscada-rs](https://kostyk348.github.io/mbscada-rs/)
+
 
 <img src="docs/img/app.png" alt="mbSCADA — живые таблицы опроса, спарклайны и боковая панель аварий" width="100%">
 

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mbSCADA — Modbus SCADA in pure Rust</title>
+<meta name="description" content="Clean-room Modbus SCADA in Rust: live polling, byte-exact .mbp/.mbw import, alarm panel, computed tags and operator mimics — in a single ~6 MB executable.">
+<meta property="og:title" content="mbSCADA — Modbus SCADA in pure Rust">
+<meta property="og:description" content="Poll Modbus TCP & RTU into live tables, import real Modbus Poll files byte-exactly, watch parameters, compute tags — one ~6 MB binary, RU/EN UI.">
+<meta property="og:image" content="img/app.png">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+</head>
+<body id="top">
+
+<header class="nav">
+  <a class="brand" href="#top">
+    <img src="img/favicon.png" alt="">
+    <span>mb<b>SCADA</b></span>
+  </a>
+  <nav class="links">
+    <a href="#features" data-i18n="nav.features"></a>
+    <a href="#screens" data-i18n="nav.screens"></a>
+    <a href="#arch" data-i18n="nav.arch"></a>
+    <a href="#download" data-i18n="nav.download"></a>
+    <a href="#start" data-i18n="nav.start"></a>
+  </nav>
+  <div class="nav-right">
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="ru">RU</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+    <a class="gh" href="https://github.com/kostyk348/mbscada-rs" target="_blank" rel="noopener">
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="hero-text">
+    <div class="pill"><span class="dot"></span><span data-i18n="hero.live"></span></div>
+    <h1 data-i18n="hero.title"></h1>
+    <p class="sub" data-i18n="hero.sub"></p>
+    <div class="badges">
+      <img src="https://img.shields.io/github/v/release/kostyk348/mbscada-rs" alt="release">
+      <img src="https://img.shields.io/badge/tests-68%20passing-22c55e" alt="tests">
+      <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+      <img src="https://img.shields.io/badge/rust-1.85%2B-orange" alt="rust">
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/kostyk348/mbscada-rs/releases/latest" target="_blank" rel="noopener" data-i18n="hero.cta.dl"></a>
+      <a class="btn ghost" href="https://github.com/kostyk348/mbscada-rs" target="_blank" rel="noopener" data-i18n="hero.cta.gh"></a>
+    </div>
+    <div class="mini-stats">
+      <div><b>~6 MB</b><span data-i18n="stat1"></span></div>
+      <div><b>5</b><span data-i18n="stat2"></span></div>
+      <div><b>68</b><span data-i18n="stat3"></span></div>
+      <div><b>0</b><span data-i18n="stat4"></span></div>
+    </div>
+  </div>
+  <div class="hero-shot">
+    <div class="chrome"><span></span><span></span><span></span></div>
+    <img src="img/app.png" alt="mbSCADA live tables">
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <h2 data-i18n="sec.f.title"></h2>
+  <p class="lead" data-i18n="sec.f.lead"></p>
+  <div class="grid">
+    <article><div class="ico">🖥️</div><h3 data-i18n="f1.t"></h3><p data-i18n="f1.d"></p></article>
+    <article><div class="ico">🤝</div><h3 data-i18n="f2.t"></h3><p data-i18n="f2.d"></p></article>
+    <article><div class="ico">🎨</div><h3 data-i18n="f3.t"></h3><p data-i18n="f3.d"></p></article>
+    <article><div class="ico">🚨</div><h3 data-i18n="f4.t"></h3><p data-i18n="f4.d"></p></article>
+    <article><div class="ico">📈</div><h3 data-i18n="f5.t"></h3><p data-i18n="f5.d"></p></article>
+    <article><div class="ico">👁️</div><h3 data-i18n="f6.t"></h3><p data-i18n="f6.d"></p></article>
+    <article><div class="ico">🧮</div><h3 data-i18n="f7.t"></h3><p data-i18n="f7.d"></p></article>
+    <article><div class="ico">🗄️</div><h3 data-i18n="f8.t"></h3><p data-i18n="f8.d"></p></article>
+    <article><div class="ico">🌐</div><h3 data-i18n="f9.t"></h3><p data-i18n="f9.d"></p></article>
+  </div>
+</section>
+
+<!-- ============ SCREENSHOTS ============ -->
+<section id="screens" class="alt">
+  <h2 data-i18n="sec.s.title"></h2>
+  <p class="lead" data-i18n="sec.s.lead"></p>
+  <div class="shots">
+    <figure>
+      <img src="img/app.png" alt="" loading="lazy">
+      <figcaption><b data-i18n="s1.t"></b><span data-i18n="s1.d"></span></figcaption>
+    </figure>
+    <figure>
+      <img src="img/scada.png" alt="" loading="lazy">
+      <figcaption><b data-i18n="s2.t"></b><span data-i18n="s2.d"></span></figcaption>
+    </figure>
+    <figure>
+      <img src="img/watch.png" alt="" loading="lazy">
+      <figcaption><b data-i18n="s3.t"></b><span data-i18n="s3.d"></span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="arch">
+  <h2 data-i18n="sec.a.title"></h2>
+  <p class="lead" data-i18n="sec.a.lead"></p>
+  <div class="crates">
+    <article class="crate"><code>mb-proto</code><p data-i18n="a.proto"></p></article>
+    <article class="crate"><code>mb-format</code><p data-i18n="a.format"></p></article>
+    <article class="crate"><code>mb-engine</code><p data-i18n="a.engine"></p></article>
+    <article class="crate"><code>mb-sim</code><p data-i18n="a.sim"></p></article>
+    <article class="crate app"><code>apps/mbscada</code><p data-i18n="a.app"></p></article>
+  </div>
+</section>
+
+<!-- ============ DOWNLOAD ============ -->
+<section id="download" class="alt">
+  <h2 data-i18n="sec.d.title"></h2>
+  <p class="lead" data-i18n="sec.d.lead"></p>
+  <div class="dl-grid">
+    <a class="dl" href="https://github.com/kostyk348/mbscada-rs/releases/latest" target="_blank" rel="noopener">
+      <div class="dl-head"><span class="dl-ico">🪟</span><b data-i18n="dl.win.t"></b></div>
+      <p data-i18n="dl.win.d"></p>
+    </a>
+    <a class="dl" href="https://github.com/kostyk348/mbscada-rs/releases/latest" target="_blank" rel="noopener">
+      <div class="dl-head"><span class="dl-ico">🐧</span><b data-i18n="dl.linux.t"></b></div>
+      <p data-i18n="dl.linux.d"></p>
+    </a>
+    <a class="dl" href="https://github.com/kostyk348/mbscada-rs/releases/latest" target="_blank" rel="noopener">
+      <div class="dl-head"><span class="dl-ico">🍎</span><b data-i18n="dl.mac.t"></b></div>
+      <p data-i18n="dl.mac.d"></p>
+    </a>
+  </div>
+  <p class="note" data-i18n="dl.note"></p>
+  <a class="btn primary big" href="https://github.com/kostyk348/mbscada-rs/releases/latest" target="_blank" rel="noopener" data-i18n="dl.all"></a>
+</section>
+
+<!-- ============ QUICK START ============ -->
+<section id="start">
+  <h2 data-i18n="sec.q.title"></h2>
+  <p class="lead" data-i18n="sec.q.lead"></p>
+  <div class="term">
+    <div class="term-head"><span></span><span></span><span></span><button type="button" id="copy" data-i18n="q.copy"></button></div>
+    <pre><code id="code">git clone https://github.com/kostyk348/mbscada-rs
+cd mbscada-rs
+cargo build --release -p mbscada</code></pre>
+  </div>
+  <p class="note" data-i18n="q.note"></p>
+</section>
+
+<!-- ============ ROADMAP ============ -->
+<section id="roadmap" class="alt">
+  <h2 data-i18n="sec.r.title"></h2>
+  <p class="lead" data-i18n="sec.r.lead"></p>
+  <ul class="road">
+    <li class="done" data-i18n="r0"></li>
+    <li data-i18n="r1"></li>
+    <li data-i18n="r2"></li>
+    <li data-i18n="r3"></li>
+    <li data-i18n="r4"></li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <img src="img/mascot.png" alt="mbSCADA mascot" class="mascot">
+  <p class="ftag" data-i18n="ft.tag"></p>
+  <p class="flinks">
+    <a href="https://github.com/kostyk348/mbscada-rs" target="_blank" rel="noopener" data-i18n="ft.repo"></a>
+    <span>·</span>
+    <a href="https://github.com/kostyk348/mbscada-rs/releases" target="_blank" rel="noopener" data-i18n="ft.rel"></a>
+    <span>·</span>
+    <a href="https://github.com/kostyk348/mbscada-rs/issues" target="_blank" rel="noopener" data-i18n="ft.iss"></a>
+  </p>
+  <p class="fmade" data-i18n="ft.made"></p>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>
