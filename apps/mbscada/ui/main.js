@@ -3,11 +3,14 @@
 const hasTauri = !!(window.__TAURI__ && window.__TAURI__.core);
 const invoke = hasTauri ? window.__TAURI__.core.invoke : null;
 
-let cfg = { connections: [], polls: [], rules: [] };
+let cfg = { connections: [], polls: [], rules: [], computed: [],
+  logfile: { enabled: false, path: "" },
+  archive: { enabled: false, path: "", interval_s: 5, all_values: false } };
 let snap = null;
 let editingPoll = null;
 let editingConn = null;
 let editingRule = null;
+let editingCalc = null;
 let guideKey = "";
 const $ = (id) => document.getElementById(id);
 
@@ -56,57 +59,94 @@ function sparkline(pollId, r, display) {
 }
 
 /* ------------------------------------------------------------ CSV logging -- */
-/* Frontend accumulates per-row values each refresh tick and appends only the
-   changed ones through the backend (`csv_log`). One file, timestamped rows.  */
-const CSV = { on: false, path: "", last: {} };
+/* Data archive (historian). Driven by cfg.archive: enabled, path, interval_s,
+   all_values. Modes: change-only (default) writes a row when display/quality
+   changes; "all values" mode rewrites every tag (plus computed tags) every
+   interval_s seconds. The file path is stored in the project and resumes on
+   boot. Backend appends raw lines (`csv_log`). */
+const CSV = { on: false, path: "", last: {}, lastAll: 0 };
+
+function csvEnabled() {
+  return !!(cfg.archive && cfg.archive.enabled && cfg.archive.path);
+}
+
+async function csvStart(path) {
+  CSV.on = true;
+  CSV.path = path;
+  CSV.last = {};
+  CSV.lastAll = 0;
+  cfg.archive.enabled = true;
+  cfg.archive.path = path;
+  await invoke("csv_log", { path: CSV.path, lines: ["time,poll_id,poll,func,addr,name,display,quality"] });
+  csvBtnState();
+  await apply();
+  footer(t("csv_running") + path);
+}
+
+async function csvStop() {
+  CSV.on = false;
+  cfg.archive.enabled = false;
+  csvBtnState();
+  await apply();
+  footer(t("csv_stopped"));
+}
 
 async function csvToggle() {
   if (!hasTauri) { footer(t("csv_only_tauri"), true); return; }
-  if (CSV.on) {
-    CSV.on = false;
-    CSV.path = "";
-    csvBtnState();
-    footer(t("csv_stopped"));
-    return;
-  }
+  if (csvEnabled()) { await csvStop(); return; }
   try {
     const path = await invoke("plugin:dialog|save", {
       options: {
         title: t("csv_dialog"),
-        defaultPath: "mbscada-log.csv",
+        defaultPath: (cfg.archive && cfg.archive.path) || "mbscada-log.csv",
         filters: [{ name: "CSV", extensions: ["csv"] }],
       },
     });
     if (!path) { footer(t("csv_cancelled")); return; }
-    CSV.on = true;
-    CSV.path = path;
-    CSV.last = {};
-    await invoke("csv_log", { path: CSV.path, lines: ["time,poll_id,poll,func,addr,name,display,quality"] });
-    csvBtnState();
-    footer(t("csv_running") + path);
+    await csvStart(path);
   } catch (e) { footer(String(e), true); }
 }
 
 function csvBtnState() {
   const b = $("csvBtn");
   if (!b) return;
-  b.textContent = CSV.on ? "■ CSV" : "CSV";
-  b.classList.toggle("accent", CSV.on);
+  const on = csvEnabled();
+  b.textContent = on ? "■ CSV" : "CSV";
+  b.classList.toggle("accent", on);
 }
 
-async function csvMaybeAppend(polls) {
-  if (!hasTauri || !CSV.on || !snap) return;
+function csvRowsFor(polls, computed) {
   const lines = [];
   const t = new Date().toISOString();
   for (const p of polls) {
     for (const r of p.rows || []) {
       const key = p.id + ":" + r.disp_addr;
       const sig = r.display + "\u0001" + r.quality;
-      if (CSV.last[key] === sig) continue;
+      if (!cfg.archive.all_values && CSV.last[key] === sig) continue;
       CSV.last[key] = sig;
       lines.push(`${t},${p.id},${csvField(p.name)},${p.func},${r.disp_addr},${csvField(r.name)},${csvField(r.display)},${r.quality}`);
     }
   }
+  for (const c of computed || []) {
+    const key = "calc:" + c.name;
+    const sig = c.display + "\u0001" + (c.ok ? "ok" : "bad");
+    if (!cfg.archive.all_values && CSV.last[key] === sig) continue;
+    CSV.last[key] = sig;
+    lines.push(`${t},,${csvField(c.name)},,calc,${csvField(c.name)},${csvField(c.display)},${c.ok ? "good" : "bad"}`);
+  }
+  return lines;
+}
+
+async function csvMaybeAppend(polls, computed) {
+  if (!hasTauri || !csvEnabled() || !snap) return;
+  // In "all values" mode throttle to cfg.archive.interval_s seconds;
+  // change-only mode reacts to every refresh tick.
+  if (cfg.archive.all_values) {
+    const iv = Math.max(1, Number(cfg.archive.interval_s) || 5) * 1000;
+    if (Date.now() - CSV.lastAll < iv) return;
+    CSV.lastAll = Date.now();
+  }
+  const lines = csvRowsFor(polls, computed);
   if (!lines.length) return;
   try { await invoke("csv_log", { path: CSV.path, lines }); } catch { /* keep ticking */ }
 }
@@ -114,6 +154,55 @@ async function csvMaybeAppend(polls) {
 function csvField(v) {
   const s = String(v == null ? "" : v);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/* --------------------------------------------------------- computed tags -- */
+/* Virtual tags evaluated by the engine from other tags' values:
+   {Label} references, p<poll>:<addr> aliases, + - * / % ^ and min/max/avg/
+   abs/sqrt/round/floor/ceil/pow. Shown as a separate card above the tables. */
+function calcFromForm() {
+  return {
+    name: $("kName").value.trim(),
+    expr: $("kExpr").value.trim(),
+    unit: $("kUnit").value.trim(),
+    decimals: Math.max(0, Math.min(6, Number($("kDec").value) || 0)),
+  };
+}
+
+function editCalc(c) {
+  editingCalc = c;
+  $("kName").value = c.name;
+  $("kExpr").value = c.expr;
+  $("kUnit").value = c.unit || "";
+  $("kDec").value = c.decimals != null ? c.decimals : 2;
+  $("detCalc").open = true;
+  $("btnCalcSubmit").textContent = t("edit_calc");
+  $("btnCalcCancel").hidden = false;
+}
+
+function endCalcEdit() {
+  editingCalc = null;
+  $("btnCalcSubmit").textContent = t("b_add_calc");
+  $("btnCalcCancel").hidden = true;
+}
+
+function renderCalcList() {
+  const box = $("calcList");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!(cfg.computed || []).length) { box.innerHTML = `<div class="empty">${esc(t("calc_none"))}</div>`; return; }
+  cfg.computed.forEach((c, i) => {
+    const el = document.createElement("div");
+    el.className = "item" + (editingCalc === c ? " editing" : "");
+    el.innerHTML = `<span class="grow"><b>${esc(c.name)}</b> <span class="sub">${esc(c.expr)}${c.unit ? " · " + esc(c.unit) : ""}</span></span>`;
+    el.appendChild(miniBtn("✎", () => editCalc(c)));
+    el.appendChild(miniBtn("✕", () => {
+      if (editingCalc === c) endCalcEdit();
+      cfg.computed.splice(i, 1);
+      apply();
+    }));
+    box.appendChild(el);
+  });
 }
 
 /* --------------------------------------------------------------- alarms -- */
@@ -240,6 +329,9 @@ function tfmt(key, vars) {
 
 /* ------------------------------------------------------------ bootstrap -- */
 async function boot() {
+  if (!Array.isArray(cfg.computed)) cfg.computed = [];
+  if (!cfg.logfile) cfg.logfile = { enabled: false, path: "" };
+  if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
   window.LANG = window.i18nLang();
   const ls = $("langSel");
@@ -255,11 +347,38 @@ async function boot() {
   applyLangStatic();
   await refreshPorts();
   wireForms();
+  await loadUiState();
   setInterval(refresh, 300);
   refresh();
   if (!hasTauri) {
     footer(t("no_tauri"), true);
   }
+}
+
+// Restores persisted UI-driven state: CSV archive resume + logging fields +
+// suggested file locations (app data dir).
+async function loadUiState() {
+  if (!hasTauri) return;
+  try {
+    const sp = await invoke("suggest_paths");
+    const lp = $("logPath");
+    if (lp && !cfg.logfile.path) lp.placeholder = sp.log;
+    if (cfg.logfile.enabled && cfg.logfile.path) {
+      $("logEnabled").checked = true;
+      $("logPath").value = cfg.logfile.path;
+    }
+    $("archAll").checked = !!cfg.archive.all_values;
+    $("archPeriod").value = cfg.archive.interval_s || 5;
+    if (csvEnabled()) {
+      // resume the historian from the saved project file
+      try {
+        await invoke("csv_log", { path: cfg.archive.path, lines: [] });
+        CSV.on = true; CSV.path = cfg.archive.path;
+        csvBtnState();
+        footer(t("csv_resumed") + CSV.path);
+      } catch { /* file not available yet */ }
+    }
+  } catch { /* suggest_paths may be missing in old builds */ }
 }
 
 let ports = [];
@@ -365,9 +484,9 @@ async function refresh() {
   try {
     if (!hasTauri) { render(); return; } // browser preview: empty, no fake data
     snap = await invoke("snapshot");
-    if (CSV.on && snap) {
+    if (csvEnabled() && snap) {
       const pollsForCsv = snap.polls.length ? snap.polls : cfg.polls;
-      await csvMaybeAppend(pollsForCsv);
+      await csvMaybeAppend(pollsForCsv, snap.computed || []);
     }
     render();
   } catch (e) { footer(t("err_prefix") + e, true); }
@@ -379,6 +498,7 @@ function render() {
   renderConnList();
   renderPollList();
   renderRuleList();
+  renderCalcList();
   renderGrid();
   renderStats();
   renderLog();
@@ -528,8 +648,10 @@ function endRuleEdit() {
 function renderGrid() {
   const grid = $("grid");
   grid.innerHTML = "";
+  const computed = (snap && snap.computed) || [];
+  if (computed.length) grid.appendChild(computedCard(computed));
   const polls = snap && snap.polls.length ? snap.polls : cfg.polls.map((p) => ({ ...p, rows: [], last_poll_ms: 0 }));
-  if (!polls.length) { grid.innerHTML = `<div class="empty" style="padding:30px">${esc(t("grid_empty"))}</div>`; return; }
+  if (!polls.length) { if (!computed.length) grid.innerHTML = `<div class="empty" style="padding:30px">${esc(t("grid_empty"))}</div>`; return; }
   const cfgById = {};
   cfg.polls.forEach((q) => { cfgById[q.id] = q; });
   for (const p of polls) {
@@ -584,19 +706,58 @@ function renderGrid() {
   }
 }
 
+// Card with computed (virtual) tags: name / value / unit / expression.
+function computedCard(computed) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const head = document.createElement("div");
+  head.className = "card-head";
+  head.innerHTML = `<h2>${esc(t("p_calc"))}</h2>
+    <span class="meta">${esc(t("calc_card_meta"))}</span>`;
+  card.appendChild(head);
+  const table = document.createElement("table");
+  table.className = "regtable";
+  table.innerHTML = `<thead><tr><th>${t("th_name")}</th><th>${t("th_value")}</th><th>${t("th_unit")}</th><th>${t("f_expr")}</th></tr></thead>`;
+  const tb = document.createElement("tbody");
+  for (const c of computed) {
+    const tr = document.createElement("tr");
+    tr.className = "calc-row";
+    if (!c.ok) tr.title = c.err || "";
+    tr.innerHTML = `<td><b>${esc(c.name)}</b></td>
+      <td class="mono"><b>${esc(c.display)}</b>${c.ok ? "" : ' <span class="calc-err">⚠</span>'}</td>
+      <td>${esc(c.unit || "")}</td>
+      <td class="mono ${c.ok ? "sub" : "calc-err"}">${esc(c.expr)}${c.ok ? "" : " — " + esc(c.err)}</td>`;
+    tb.appendChild(tr);
+  }
+  table.appendChild(tb);
+  card.appendChild(table);
+  return card;
+}
+
 function renderStats() {
   const box = $("stats");
   box.innerHTML = "";
   const conns = snap ? snap.connections : [];
   if (!conns.length) { box.innerHTML = `<div class="empty">—</div>`; return; }
+  const ago = (ts) => ts ? tfmt("ago", { s: Math.max(0, Math.round((snap.ts_ms - ts) / 1000)) }) : "—";
   for (const c of conns) {
     const s = c.stats;
     box.insertAdjacentHTML("beforeend", `
       <div class="stat-line"><span>${esc(c.name)}</span><b class="${s.online ? "good" : "bad"}">${s.online ? "online" : "offline"}</b></div>
       <div class="stat-line"><span>TX / RX</span><b>${s.tx} / ${s.rx}</b></div>
       <div class="stat-line"><span>${t("err_timeouts")}</span><b>${s.errors} / ${s.timeouts}</b></div>
+      <div class="stat-line"><span>${t("reconnects")}</span><b>${s.reconnects || 0}</b></div>
       <div class="stat-line"><span>${t("resp")}</span><b>${s.last_ms.toFixed(1)} / ${s.avg_ms.toFixed(1)}</b></div>
+      <div class="stat-line"><span>${t("last_ok")}</span><b>${ago(s.last_ok_ts)}</b></div>
       ${s.last_error ? `<div class="stat-line"><span class="bad">${esc(s.last_error)}</span></div>` : ""}`);
+    // Per-poll diagnostics (only polls of this connection)
+    const polls = (snap ? snap.polls : []).filter((p) => p.conn_id === c.id);
+    for (const p of polls) {
+      const st = p.stats || { ok: 0, err: 0, last_ok_ts: 0 };
+      box.insertAdjacentHTML("beforeend", `
+        <div class="stat-line"><span class="sub">· ${esc(p.name)}</span>
+          <b class="sub">ok ${st.ok} / err ${st.err} · ${p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " " + t("ms") : "—"} · ${ago(st.last_ok_ts)}</b></div>`);
+    }
   }
 }
 
@@ -779,6 +940,11 @@ async function loadProject() {
     });
     if (!sel || !sel.length) { footer(t("open_cancelled")); return; }
     cfg = JSON.parse(await invoke("load_project", { path: sel[0] }));
+    // Old projects may lack the newer sections — normalize before use.
+    if (!Array.isArray(cfg.computed)) cfg.computed = [];
+    if (!cfg.logfile) cfg.logfile = { enabled: false, path: "" };
+    if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
+    if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
     await apply();
     footer(t("loaded") + sel[0]);
   } catch (e) { footer(String(e), true); }
@@ -906,6 +1072,39 @@ function wireForms() {
   $("btnConnCancel").onclick = () => { endConnEdit(); resetConnForm(); };
   $("btnPollCancel").onclick = () => { endPollEdit(); };
   $("btnRuleCancel").onclick = () => { endRuleEdit(); };
+
+  // Вычисляемые тэги: добавление/правка/удаление.
+  $("calcForm").onsubmit = (e) => {
+    e.preventDefault();
+    const item = calcFromForm();
+    if (!item.name) { footer(t("calc_need_name"), true); return; }
+    if (!item.expr) { footer(t("calc_need_expr"), true); return; }
+    if (cfg.computed.length >= 64) { footer(t("calc_limit"), true); return; }
+    if (editingCalc) {
+      Object.assign(editingCalc, item);
+      endCalcEdit();
+    } else {
+      cfg.computed.push(item);
+    }
+    apply();
+  };
+  $("btnCalcCancel").onclick = endCalcEdit;
+
+  // Журнал (движок пишет события в файл) и настройки CSV-архива.
+  const le = $("logEnabled"), lp = $("logPath");
+  if (le) le.onchange = async () => {
+    cfg.logfile.enabled = le.checked;
+    if (le.checked && !cfg.logfile.path) {
+      try { const sp = await invoke("suggest_paths"); cfg.logfile.path = sp.log; } catch { /* без подсказки */ }
+    }
+    lp.value = cfg.logfile.path || "";
+    await apply();
+    footer(le.checked ? tfmt("log_on", { path: cfg.logfile.path }) : t("log_off"));
+  };
+  if (lp) lp.onchange = () => { cfg.logfile.path = lp.value.trim(); apply(); };
+  const aa = $("archAll"), ap = $("archPeriod");
+  if (aa) aa.onchange = () => { cfg.archive.all_values = aa.checked; apply(); };
+  if (ap) ap.onchange = () => { cfg.archive.interval_s = Math.max(1, Number(ap.value) || 5); ap.value = cfg.archive.interval_s; apply(); };
 
   // Смена соединения в форме опроса — Slave ID подтягивается из соединения
   // (можно переопределить вручную).
@@ -1130,17 +1329,21 @@ function renderSchema() {
 function gaugeSvg(v, min, max, level) {
   const span = Math.max(max - min, 1e-9);
   const t = Math.max(0, Math.min(1, ((Number(v) || 0) - min) / span));
-  const cx = 90, cy = 82, r = 68;
+  // Margins around the arc inside the viewBox so the colored stroke (with
+  // round caps) never touches the widget border — see v1.1 overflow fix.
+  const cx = 90, cy = 84, r = 60, sw = 12;
   const th = Math.PI * (1 - t);
   const x = cx + r * Math.cos(th), y = cy - r * Math.sin(th);
   const large = t > 0.5 ? 1 : 0;
   const col = level === "hihi" || level === "hi" ? "#ef4444"
     : level === "lolo" || level === "lo" ? "#3b82f6" : "#22d3ee";
   const txt = Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 100) / 100) : "—";
-  return `<svg width="150" height="86" viewBox="0 0 180 100">
-    <path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#1e293b" stroke-width="13" stroke-linecap="round"/>
-    ${t > 0.004 ? `<path d="M ${cx - r} ${cy} A ${r} ${r} 0 ${large} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="13" stroke-linecap="round"/>` : ""}
-    <text x="90" y="96" text-anchor="middle" class="gtxt">${esc(txt)}</text>
+  // Long values shrink instead of overflowing the widget.
+  const fs = txt.length > 9 ? 11 : txt.length > 6 ? 13 : 15;
+  return `<svg width="164" height="98" viewBox="0 0 180 106">
+    <path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#1e293b" stroke-width="${sw}" stroke-linecap="round"/>
+    ${t > 0.004 ? `<path d="M ${cx - r} ${cy} A ${r} ${r} 0 ${large} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round"/>` : ""}
+    <text x="90" y="100" text-anchor="middle" class="gtxt" style="font-size:${fs}px">${esc(txt)}</text>
   </svg>`;
 }
 

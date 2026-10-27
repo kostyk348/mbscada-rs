@@ -1,7 +1,8 @@
 //! End-to-end engine tests against the simulator (TCP and RTU-over-TCP).
 
 use mb_engine::{
-    AlarmSpec, Cond, ConnKind, Connection, Engine, Fmt, Poll, Rule, Severity,
+    AlarmSpec, ComputedTag, Cond, ConnKind, Connection, Engine, EngineCfg, Fmt, Poll, Rule,
+    Severity,
 };
 use mb_sim::net::{serve, serve_rtu};
 use mb_sim::Sim;
@@ -216,4 +217,87 @@ fn thirty_two_branches_per_row() {
     // value 150 matches branches with threshold <= 150; ordered evaluation
     // keeps the LOWEST threshold (id 0) in force.
     assert_eq!(row.bg.as_deref(), Some("#100000"), "branch order = list order");
+}
+
+// ------------------------------------------------- computed tags + log file
+
+fn ctag(name: &str, expr: &str) -> ComputedTag {
+    ComputedTag {
+        name: name.into(),
+        expr: expr.into(),
+        unit: String::new(),
+        decimals: 2,
+    }
+}
+
+fn find<'a>(snap: &'a mb_engine::Snapshot, name: &str) -> &'a mb_engine::ComputedView {
+    snap.computed.iter().find(|c| c.name == name).unwrap()
+}
+
+#[test]
+fn computed_tags_evaluate_from_labels_and_aliases() {
+    let server = serve(seeded(), "127.0.0.1:0").expect("bind");
+    // sim.holding = [150, 7, ...]; label of addr 0 is "Температура"
+    let eng = Engine::start_with(EngineCfg {
+        connections: vec![conn("c1", ConnKind::Tcp, server.addr.port())],
+        polls: vec![poll("c1")],
+        rules: vec![],
+        computed: vec![
+            ctag("Двойная", "{Температура} * 2"),
+            ctag("Разница", "{p1:1} - {Температура}"),
+            ctag("НетТэга", "{Нет такого} + 1"),
+            ctag("Деление", "1 / 0"),
+            ctag("ПлохойСинтаксис", "2 +"),
+        ],
+        log_path: None,
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    let snap = eng.snapshot();
+
+    let d = find(&snap, "Двойная");
+    assert!(d.ok, "ok: {}", d.err);
+    assert_eq!(d.value, 300.0, "scaled from the labeled row");
+
+    let r = find(&snap, "Разница");
+    assert!(r.ok);
+    assert_eq!(r.value, 7.0 - 150.0, "p1:1 alias = 7, label = 150");
+
+    let nt = find(&snap, "НетТэга");
+    assert!(!nt.ok);
+    assert!(nt.err.contains("Нет такого"), "err: {}", nt.err);
+
+    let div = find(&snap, "Деление");
+    assert!(!div.ok);
+    assert!(div.err.contains("ноль"));
+
+    let syn = find(&snap, "ПлохойСинтаксис");
+    assert!(!syn.ok, "compile error surfaced");
+    assert!(!syn.err.is_empty());
+}
+
+#[test]
+fn event_log_file_receives_journal_lines() {
+    let server = serve(seeded(), "127.0.0.1:0").expect("bind");
+    let dir = std::env::temp_dir().join(format!("mbscada-log-it-{}", std::process::id()));
+    let path = dir.join("journal.log");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let eng = Engine::start_with(EngineCfg {
+        connections: vec![conn("c1", ConnKind::Tcp, server.addr.port())],
+        polls: vec![poll("c1")],
+        rules: vec![],
+        computed: vec![],
+        log_path: Some(path.to_string_lossy().into_owned()),
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    drop(eng); // flushes the "движок остановлен" line
+
+    let s = std::fs::read_to_string(&path).expect("log file written");
+    assert!(s.contains("движок запущен"), "start event: {s}");
+    assert!(s.contains("[SYS] engine:"), "system events tagged: {s}");
+    assert!(s.contains("[RX]"), "poll exchanges logged: {s}");
+    assert!(s.contains("движок остановлен"), "stop event: {s}");
+    // Timestamped lines, not just HH:MM:SS
+    assert!(s.contains(" [RX] "), "format: {{stamp}} [DIR] conn: text");
+    let _ = std::fs::remove_dir_all(&dir);
 }

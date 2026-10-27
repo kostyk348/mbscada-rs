@@ -167,6 +167,35 @@
             </form>
           </details>
         </div>
+        <div class="panel">
+          <h3 data-i="p_calc">Вычисляемые тэги</h3>
+          <div id="calcList" class="list"></div>
+          <details id="detCalc">
+            <summary data-i="calc_add_title">+ Вычисляемый тэг</summary>
+            <form id="calcForm" class="form">
+              <label><span data-i="f_name">Имя</span> <input id="kName" value="ΔT" /></label>
+              <label><span data-i="f_expr">Выражение</span> <input id="kExpr" value="" /></label>
+              <label><span data-i="f_unit">Ед.</span> <input id="kUnit" value="" /></label>
+              <label title="сколько цифр после запятой показывать"><span data-i="f_dec">Знаков</span> <input id="kDec" type="number" min="0" max="6" value="2" /></label>
+              <div class="formbtns">
+                <button type="submit" id="btnCalcSubmit" class="primary" data-i="b_add_calc">Добавить тэг</button>
+                <button type="button" id="btnCalcCancel" class="mini" data-i="b_cancel" hidden>Отмена</button>
+              </div>
+              <p class="sub" data-i="calc_hint">Пример: {T2 jacket} - {T1 reactor}. Ссылки на тэги — в {} по имени строки или псевдонимом p{опрос}:{адрес}. Функции: min max avg abs sqrt round floor ceil pow; операции + - * / % ^.</p>
+            </form>
+          </details>
+        </div>
+
+        <div class="panel">
+          <h3 data-i="p_logging">Журнал и архив</h3>
+          <form class="form" onsubmit="return false">
+            <label class="check"><input id="logEnabled" type="checkbox" /> <span data-i="log_enable">писать журнал обмена в файл</span></label>
+            <label title="куда дописывать события обмена (RX/ERR/WR/SYS)"><span data-i="log_path">Файл журнала</span> <input id="logPath" value="" placeholder="mbscada.log" /></label>
+            <label class="check"><input id="archAll" type="checkbox" /> <span data-i="arch_all">в CSV писать все тэги по периоду</span></label>
+            <label title="период записи всех тэгов для режима архива"><span data-i="arch_period">Период архива, с</span> <input id="archPeriod" type="number" min="1" value="5" /></label>
+          </form>
+          <p class="sub" data-i="log_hint">Журнал ведёт движок (RX/WR/ERR/SYS). CSV-архив значений включается кнопкой CSV сверху — файл сохраняется в проекте и возобновляется при запуске.</p>
+        </div>
       </aside>
 
       <!-- CENTER: tables / schema -->
@@ -217,7 +246,7 @@
           </div>
         </div>
         <div class="panel">
-          <h3 data-i="p_stats">Статистика</h3>
+          <h3 data-i="p_diag">Диагностика</h3>
           <div id="stats" class="stats"></div>
         </div>
         <div class="panel">

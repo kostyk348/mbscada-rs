@@ -252,6 +252,27 @@ impl Poll {
     }
 }
 
+fn def_decimals() -> u8 {
+    2
+}
+
+/// A computed (virtual) tag: an arithmetic expression evaluated from other
+/// tags' values each refresh (e.g. `{T2 jacket} - {T1 reactor}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComputedTag {
+    /// Display name; also the variable name other expressions may reference
+    /// (braces recommended: `{ΔT}`).
+    pub name: String,
+    /// Expression over tag labels, `p<poll>:<addr>` aliases, numbers and the
+    /// functions min/max/avg/abs/sqrt/round/floor/ceil/pow.
+    pub expr: String,
+    #[serde(default)]
+    pub unit: String,
+    /// Digits after the decimal point in the UI (0..=6).
+    #[serde(default = "def_decimals")]
+    pub decimals: u8,
+}
+
 pub fn func_is_read(func: u8) -> bool {
     matches!(func, 1 | 2 | 3 | 4)
 }
@@ -291,5 +312,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.describe(), "Serial COM3 115200 N81 · slave 3");
+    }
+
+    #[test]
+    fn computed_tag_defaults_and_roundtrip() {
+        // Old project files: `unit` and `decimals` may be missing.
+        let t: ComputedTag =
+            serde_json::from_str(r#"{"name":"ΔT","expr":"{T2} - {T1}"}"#).unwrap();
+        assert_eq!(t.unit, "");
+        assert_eq!(t.decimals, 2);
+        let t2: ComputedTag = serde_json::from_str(
+            r#"{"name":"kW","expr":"P*1.5","unit":"кВт","decimals":1}"#,
+        )
+        .unwrap();
+        let back: ComputedTag =
+            serde_json::from_str(&serde_json::to_string(&t2).unwrap()).unwrap();
+        assert_eq!(back.decimals, 1);
+        assert_eq!(back.unit, "кВт");
     }
 }

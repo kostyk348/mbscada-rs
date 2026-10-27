@@ -150,9 +150,13 @@ td .spark { display: block; color: var(--accent, #38bdf8); opacity: 0.9; }
   background-image: linear-gradient(#152036 1px, transparent 1px), linear-gradient(90deg, #152036 1px, transparent 1px);
   background-size: 24px 24px; }
 .widget { position: absolute; user-select: none; cursor: move; border: 1px solid var(--line);
-  border-radius: 8px; padding: 6px 8px; background: #0e1626; min-width: 72px; text-align: center; }
+  border-radius: 8px; padding: 6px 8px; background: #0e1626; min-width: 72px; text-align: center;
+  overflow: hidden; }
 .widget.sel { outline: 2px solid var(--accent); }
-.widget .wlabel { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.widget .wlabel { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; margin: 0 auto; }
+/* block layout: inline svg adds a baseline gap that pushes the arc
+   beyond the widget's bottom border */
+.widget svg { display: block; margin: 0 auto; }
 .widget .wval { font-family: ui-monospace, Consolas, monospace; font-weight: 700; font-size: 15px; }
 .widget .wdel { position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; border-radius: 50%;
   background: #7f1d1d; color: #fff; font-size: 12px; line-height: 16px; text-align: center; cursor: pointer; display: none; }
@@ -192,6 +196,13 @@ td .spark { display: block; color: var(--accent, #38bdf8); opacity: 0.9; }
 .al-item.lv-hi { border-left-color: var(--warn); } .al-item.lv-hi .al-dot { background: var(--warn); }
 .al-item.lv-lo { border-left-color: #3b82f6; } .al-item.lv-lo .al-dot { background: #3b82f6; }
 .al-item.lv-lolo { border-left-color: #2563eb; } .al-item.lv-lolo .al-dot { background: #2563eb; }
+
+.alarm-btn { margin-left: auto; }
+
+/* computed (virtual) tags card */
+.kbadge { background: #164e63; color: #a5f3fc; border-radius: 8px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; }
+.calc-err { color: var(--crit); font-size: 11px; }
+tr.calc-row td { border-bottom: 1px solid #131d33; }
 
 /* jump-to-row flash (from the alarm panel) */
 tr.flashrow { outline: 2px solid var(--accent); outline-offset: -2px; }

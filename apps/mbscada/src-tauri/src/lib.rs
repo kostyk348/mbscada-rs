@@ -1,18 +1,77 @@
 //! mbSCADA desktop shell (Tauri v2).
 //!
 //! Config-driven, Modbus Poll style. The UI owns connections / poll definitions
-//! (your own addresses) / styling rules and pushes them here; `mb-engine` does
-//! the polling. This crate only exposes commands — no polling logic.
+//! (your own addresses) / styling rules / computed tags / logging & archive
+//! settings and pushes them here; `mb-engine` does the polling. This crate
+//! only exposes commands — no polling logic.
 
-use mb_engine::{Connection, Engine, Poll, Rule, Snapshot};use serde::{Deserialize, Serialize};
+use mb_engine::{
+    ComputedTag, Connection, Engine, EngineCfg, Poll, Rule, Snapshot,
+};
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Cfg {
     connections: Vec<Connection>,
     polls: Vec<Poll>,
     rules: Vec<Rule>,
+    #[serde(default)]
+    computed: Vec<ComputedTag>,
+    #[serde(default)]
+    logfile: LogCfg,
+    #[serde(default)]
+    archive: ArchiveCfg,
+}
+
+/// Engine event log (journal) file settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LogCfg {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    path: String,
+}
+
+impl Default for LogCfg {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: String::new(),
+        }
+    }
+}
+
+/// CSV data archive (historian) settings; the frontend appends rows through
+/// the `csv_log` command, these fields only persist the configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ArchiveCfg {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    path: String,
+    /// Write interval for "all values" mode, seconds.
+    #[serde(default = "def_arc_interval")]
+    interval_s: u32,
+    /// true = write every tag every `interval_s`; false = only changed rows.
+    #[serde(default)]
+    all_values: bool,
+}
+
+fn def_arc_interval() -> u32 {
+    5
+}
+
+impl Default for ArchiveCfg {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: String::new(),
+            interval_s: def_arc_interval(),
+            all_values: false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -72,7 +131,18 @@ fn test_connection(conn: Connection) -> Result<String, String> {
 
 fn restart(state: &AppState) {
     let cfg = state.cfg.lock().unwrap().clone();
-    *state.engine.lock().unwrap() = Some(Engine::start(cfg.connections, cfg.polls, cfg.rules));
+    let log_path = if cfg.logfile.enabled && !cfg.logfile.path.trim().is_empty() {
+        Some(cfg.logfile.path.trim().to_string())
+    } else {
+        None
+    };
+    *state.engine.lock().unwrap() = Some(Engine::start_with(EngineCfg {
+        connections: cfg.connections,
+        polls: cfg.polls,
+        rules: cfg.rules,
+        computed: cfg.computed,
+        log_path,
+    }));
 }
 
 #[tauri::command]
@@ -150,6 +220,9 @@ fn csv_log(path: String, lines: Vec<String>) -> Result<usize, String> {
     if lines.is_empty() {
         return Ok(0);
     }
+    if let Some(dir) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -161,6 +234,58 @@ fn csv_log(path: String, lines: Vec<String>) -> Result<usize, String> {
         n += 1;
     }
     Ok(n)
+}
+
+/// Append raw lines to the engine event log file (used by the frontend for
+/// UI-side events like archive start/stop).
+#[tauri::command]
+fn log_lines(path: String, lines: Vec<String>) -> Result<usize, String> {
+    use std::io::Write as _;
+    if lines.is_empty() {
+        return Ok(0);
+    }
+    if let Some(dir) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    let mut n = 0;
+    for l in &lines {
+        writeln!(f, "{l}").map_err(|e| e.to_string())?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Suggested default file locations (app data dir): journal and CSV archive.
+#[tauri::command]
+fn suggest_paths(app: tauri::AppHandle) -> SuggestedPaths {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .or_else(|| dirs_home().map(|h| h.join(".mbscada")))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let _ = std::fs::create_dir_all(&dir);
+    SuggestedPaths {
+        log: dir.join("mbscada.log").to_string_lossy().into_owned(),
+        csv: dir.join("mbscada-data.csv").to_string_lossy().into_owned(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SuggestedPaths {
+    log: String,
+    csv: String,
+}
+
+fn dirs_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
 }
 
 /// Import Modbus Poll files (`<path>` may be a .mbw, a .mbp, or a folder).
@@ -188,6 +313,8 @@ pub fn run() {
             save_project,
             load_project,
             csv_log,
+            log_lines,
+            suggest_paths,
             import_paths,
         ])
         .run(tauri::generate_context!())
