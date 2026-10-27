@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/mascot.png" alt="mbSCADA mascot — the girl with goggles, headset and gears" width="180">
+
 # 📡 mbSCADA
 
 ### Modbus Poll, reimagined — in pure Rust.
@@ -9,8 +11,9 @@ Poll Modbus/TCP & RTU devices into live value tables, import real Modbus Poll `.
 style any row from a 32-branch rule tree and build mimic diagrams —
 all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
+[![Release](https://img.shields.io/github/v/release/kostyk348/mbscada-rs)](https://github.com/kostyk348/mbscada-rs/releases/latest)
 [![CI](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-57%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-60%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust&logoColor=black)](https://rustup.rs/)
 [![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
@@ -45,6 +48,20 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 | **SCADA + traffic log** | <img src="docs/img/scada.png" width="100%"> |
 
 </details>
+
+## ⬇ Download v1.0.0
+
+Prebuilt installers for every platform — no Rust toolchain needed.
+Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
+
+| Platform | Files |
+|---|---|
+| **Windows** 10/11 x64 | NSIS installer `.exe` · `.msi` |
+| **Linux** x86_64 & aarch64 | `.AppImage` (runs anywhere) · `.deb` |
+| **macOS** Apple Silicon & Intel | `.dmg` |
+
+> Windows: WebView2 is preinstalled on Win10/11. Linux AppImage bundles its own WebKit.
+> Every release is built automatically by GitHub Actions from a `v*` tag — five runners, one commit, all platforms.
 
 ## ✨ Feature tour
 
@@ -94,6 +111,10 @@ Modbus Poll has no SCADA mode. That is the point of mbSCADA.
 
 ## 🚀 Getting started
 
+### Install
+
+Download an installer for your OS from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest) (see the table above), install — and run `mbSCADA`.
+
 ### Build from source
 
 **Requirements:** [Rust](https://rustup.rs/) 1.85+, Windows (WebView2 is preinstalled on Win10/11), or Linux with `libudev-dev pkg-config libwebkit2gtk-4.1-dev` for GUI work.
@@ -101,18 +122,21 @@ Modbus Poll has no SCADA mode. That is the point of mbSCADA.
 ```bash
 git clone https://github.com/kostyk348/mbscada-rs.git
 cd mbscada-rs
-cargo test                # 57 engine tests
+cargo test                # 60 engine tests
 
 # demo slave (no hardware needed): serves registers on 127.0.0.1:502
 cargo run -p mb-sim --example demo_server -- 502
 
-# the app (Tauri 2)
-cd apps/mbscada/src-tauri
-cargo build --release --target x86_64-pc-windows-gnu
-# → target/x86_64-pc-windows-gnu/release/mbscada.exe
+# the app (Tauri 2), raw binary
+cargo build --release -p mbscada
+# → target/release/mbscada
+
+# or full installers for your current OS
+cargo install tauri-cli --version '^2'
+cargo tauri build
 ```
 
-Launch `mbscada.exe`, «Импорт папки…» your `.mbp` folder and hit **Старт** — real Modbus Poll windows appear as polls and start flowing.
+Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **Старт** — real Modbus Poll windows appear as polls and start flowing.
 
 ## 🏗 Architecture
 
@@ -142,9 +166,11 @@ Launch `mbscada.exe`, «Импорт папки…» your `.mbp` folder and hit 
 - ✅ Byte-exact `.mbp` round-trip on a real corpus (v0.4)
 - ✅ Modbus ASCII framing + ASCII serial & over-TCP transports (v0.4)
 - ✅ Per-row sparklines + CSV value log (v0.4)
+- ✅ In-place editing of connections / polls / rules; per-connection default slave ID; imports bound to your own connections (v1.0)
+- ✅ Prebuilt release bundles: Windows x64, Linux x86_64 + aarch64, macOS Intel + Apple Silicon (v1.0)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
-- ⬜ macOS / Linux release builds
+- ⬜ Alarm panel: active alarms pinned to a side panel, with ack/history
 
 ## ⁇ FAQ
 
@@ -166,8 +192,10 @@ Issues and PRs welcome. The engine is test-first: `crates/mb-engine`, `crates/mb
 
 <div align="center">
 
+<img src="assets/mascot.png" alt="mbSCADA mascot" width="120">
+
 **mbSCADA** — Modbus Poll for people who also want SCADA.
 
-[Build it](#-getting-started) · [Roadmap](#-roadmap) · [License (MIT)](LICENSE)
+[Download](https://github.com/kostyk348/mbscada-rs/releases/latest) · [Build it](#-getting-started) · [Roadmap](#-roadmap) · [License (MIT)](LICENSE)
 
 </div>

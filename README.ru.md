@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/mascot.png" alt="Маскот mbSCADA — девочка в очках-гоглах, с гарнитурой и шестерёнками" width="180">
+
 # 📡 mbSCADA
 
 ### Modbus Poll, reimagined — in pure Rust.
@@ -8,8 +10,9 @@
 Опрос Modbus/TCP и RTU в живые таблицы значений, байт-в-битный импорт настоящих `.mbp/.mbw` Modbus Poll, стилевые правила деревом из 32 веток на строку и мимик-схемы —
 всё в одном exe (~6 МБ). Чужой исходный код не читался, никогда.
 
+[![Release](https://img.shields.io/github/v/release/kostyk348/mbscada-rs)](https://github.com/kostyk348/mbscada-rs/releases/latest)
 [![CI](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-57%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-60%20passing-22c55e)](https://github.com/kostyk348/mbscada-rs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust&logoColor=black)](https://rustup.rs/)
 [![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
@@ -43,6 +46,20 @@
 | **SCADA + журнал обмена** | <img src="docs/img/scada.png" width="100%"> |
 
 </details>
+
+## ⬇ Скачать v1.0.0
+
+Готовые установщики под все платформы — тулчейн не нужен.
+Забирайте из [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
+
+| Платформа | Файлы |
+|---|---|
+| **Windows** 10/11 x64 | установщик NSIS `.exe` · `.msi` |
+| **Linux** x86_64 и aarch64 | `.AppImage` (запускается везде) · `.deb` |
+| **macOS** Apple Silicon и Intel | `.dmg` |
+
+> Windows: WebView2 уже предустановлен в Win10/11. Linux AppImage несёт свой WebKit.
+> Каждый релиз собирается автоматически GitHub Actions из тега `v*` — пять раннеров, один коммит, все платформы.
 
 ## ✨ Тур по возможностям
 
@@ -92,23 +109,32 @@
 
 ## 🚀 Сборка и запуск
 
+### Установка
+
+Скачайте установщик для своей ОС из [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest) (таблица выше), поставьте — и запускайте `mbSCADA`.
+
+### Сборка из исходников
+
 **Требования:** [Rust](https://rustup.rs/) 1.85+, Windows (WebView2 уже в Win10/11) или Linux с `libudev-dev pkg-config libwebkit2gtk-4.1-dev` для GUI.
 
 ```bash
 git clone https://github.com/kostyk348/mbscada-rs.git
 cd mbscada-rs
-cargo test                # 57 тестов движка
+cargo test                # 60 тестов движка
 
 # демо-ведомый (без железа): обслуживает регистры на 127.0.0.1:502
 cargo run -p mb-sim --example demo_server -- 502
 
-# приложение (Tauri 2)
-cd apps/mbscada/src-tauri
-cargo build --release --target x86_64-pc-windows-gnu
-# → target/x86_64-pc-windows-gnu/release/mbscada.exe
+# приложение (Tauri 2), чистый бинарник
+cargo build --release -p mbscada
+# → target/release/mbscada
+
+# или полные установщики под текущую ОС
+cargo install tauri-cli --version '^2'
+cargo tauri build
 ```
 
-Запустите `mbscada.exe`, «Импорт папки…» свою папку с `.mbp` и жмите **Старт** — окна Modbus Poll станут опросами и потекут.
+Запустите `mbSCADA`, «Импорт папки…» свою папку с `.mbp` и жмите **Старт** — окна Modbus Poll станут опросами и потекут.
 
 ## 🏗 Архитектура
 
@@ -138,9 +164,11 @@ cargo build --release --target x86_64-pc-windows-gnu
 - ✅ Байт-в-битный round-trip `.mbp` на реальном корпусе (v0.4)
 - ✅ Фрейминг Modbus ASCII + транспорты ASCII-serial и over-TCP (v0.4)
 - ✅ Спарклайны по строкам + CSV-лог значений (v0.4)
+- ✅ Редактирование соединений / опросов / правил на месте; Slave ID по умолчанию в соединении; импорт привязывается к вашим соединениям (v1.0)
+- ✅ Готовые релизные сборки: Windows x64, Linux x86_64 + aarch64, macOS Intel + Apple Silicon (v1.0)
 - ⬜ `.mbp`-писатель в UI — «Сохранить как Modbus Poll» (round-trip слой уже в движке)
 - ⬜ Окно трендов per-row (больше спарклайна)
-- ⬜ macOS / Linux сборки релизов
+- ⬜ Панель аварий: активные аварии выносятся на боковую панель, с квитированием и историей
 
 ## ⁇ FAQ
 
@@ -162,8 +190,10 @@ Issues и PR welcome. Движок тестовый: `crates/mb-engine`, `crates
 
 <div align="center">
 
+<img src="assets/mascot.png" alt="Маскот mbSCADA" width="120">
+
 **mbSCADA** — Modbus Poll для тех, кому нужен ещё и SCADA.
 
-[Собрать](#-сборка-и-запуск) · [Роадмап](#-дорожная-карта) · [Лицензия (MIT)](LICENSE)
+[Скачать](https://github.com/kostyk348/mbscada-rs/releases/latest) · [Собрать](#-сборка-и-запуск) · [Роадмап](#-дорожная-карта) · [Лицензия (MIT)](LICENSE)
 
 </div>
