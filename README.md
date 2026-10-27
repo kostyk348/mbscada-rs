@@ -22,6 +22,8 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 [![Listed on Remade](https://remade.wiki/badges/listed-on-remade.svg)](https://remade.wiki/projects/mbscada/)
 
 **English** · [Русский](README.ru.md)
+**🌐 Project site:** [kostyk348.github.io/mbscada-rs](https://kostyk348.github.io/mbscada-rs/)
+
 
 <img src="docs/img/app-en.png" alt="mbSCADA — live poll tables with quality badges, per-row sparklines and the alarm side panel" width="100%">
 
