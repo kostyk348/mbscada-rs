@@ -10,22 +10,26 @@
     <header class="topbar">
       <div class="brand">mb<span>SCADA</span></div>
       <div id="connChips" class="chips"></div>
-      <select id="addrMode" class="addrmode" title="Как показывать/опрашивать адреса">
-        <option value="raw">адреса: как в файле</option>
-        <option value="4x">как 4x0000</option>
-        <option value="4xxxx">как 40001+</option>
-        <option value="base1">адреса с 1</option>
+      <select id="langSel" class="addrmode" title="язык интерфейса">
+        <option value="ru">RU</option>
+        <option value="en">EN</option>
+      </select>
+      <select id="addrMode" class="addrmode" data-it="addrmode_title">
+        <option value="raw" data-i="addr_raw">адреса: как в файле</option>
+        <option value="4x" data-i="addr_4x">как 4x0000</option>
+        <option value="4xxxx" data-i="addr_4xxxx">как 40001+</option>
+        <option value="base1" data-i="addr_base1">адреса с 1</option>
       </select>
       <div class="actions">
-        <button id="btnImportFiles" title="импорт .mbp / .mbw файлов Modbus Poll">Импорт файлов…</button>
-        <button id="btnImportFolder" title="импорт всех .mbp / .mbw из папки">Импорт папки…</button>
+        <button id="btnImportFiles" data-i="imp_files" data-it="conn_add_title">Импорт файлов…</button>
+        <button id="btnImportFolder" data-i="imp_folder" data-it="conn_folder_title">Импорт папки…</button>
         <span class="sep"></span>
-        <button id="btnStart" class="primary" title="запустить опрос">▶ Старт</button>
-        <button id="btnStop" title="остановить опрос">■ Стоп</button>
-        <button id="csvBtn" title="лог значений в CSV (пишутся только изменившиеся строки)">CSV</button>
+        <button id="btnStart" class="primary" data-i="start" data-it="start_title">▶ Старт</button>
+        <button id="btnStop" data-i="stop" data-it="stop_title">■ Стоп</button>
+        <button id="csvBtn" data-it="csv_title" title="лог значений в CSV (пишутся только изменившиеся строки)">CSV</button>
         <span class="sep"></span>
-        <button id="btnSave" title="сохранить проект (соединения, опросы, правила, схема)">Сохранить</button>
-        <button id="btnLoad" title="открыть проект mbSCADA">Открыть</button>
+        <button id="btnSave" data-i="save" data-it="save_title">Сохранить</button>
+        <button id="btnLoad" data-i="load" data-it="load_title">Открыть</button>
       </div>
     </header>
 
@@ -33,13 +37,13 @@
       <!-- LEFT: configuration -->
       <aside class="side left">
         <div class="panel">
-          <h3>Соединения</h3>
+          <h3 data-i="p_conns">Соединения</h3>
           <div id="connList" class="list"></div>
           <details id="detConn" open>
-            <summary>+ Соединение</summary>
+            <summary data-i="b_add_conn">+ Соединение</summary>
             <form id="connForm" class="form">
-              <label>Имя <input id="cName" value="Conn1" /></label>
-              <label>Тип
+              <label><span data-i="f_name">Имя</span> <input id="cName" value="Conn1" /></label>
+              <label><span data-i="f_kind">Тип</span>
                 <select id="cKind">
                   <option value="tcp">TCP/IP</option>
                   <option value="rtu">Serial Port (RTU)</option>
@@ -49,52 +53,52 @@
                 </select>
               </label>
               <div id="tcpFields">
-                <label>IP <input id="cHost" value="127.0.0.1" /></label>
-                <label>Порт <input id="cPort" type="number" value="502" /></label>
+                <label><span data-i="f_ip">IP</span> <input id="cHost" value="127.0.0.1" /></label>
+                <label><span data-i="f_port">Порт</span> <input id="cPort" type="number" value="502" /></label>
               </div>
               <div id="serFields" hidden>
-                <label>COM <select id="cCom"></select></label>
-                <label>Скорость <select id="cBaud">
+                <label><span data-i="f_com">COM</span> <select id="cCom"></select></label>
+                <label><span data-i="f_baud">Скорость</span> <select id="cBaud">
                   <option>1200</option><option>2400</option><option>4800</option>
                   <option selected>9600</option><option>19200</option>
                   <option>38400</option><option>57600</option><option>115200</option>
                 </select></label>
-                <label>Чётность <select id="cParity"><option>N</option><option>E</option><option>O</option></select></label>
-                <label>Биты данных <select id="cData"><option>8</option><option>7</option><option>6</option><option>5</option></select></label>
-                <label>Стоп-биты <select id="cStop"><option>1</option><option>2</option></select></label>
+                <label><span data-i="f_parity">Чётность</span> <select id="cParity"><option>N</option><option>E</option><option>O</option></select></label>
+                <label><span data-i="f_data">Биты данных</span> <select id="cData"><option>8</option><option>7</option><option>6</option><option>5</option></select></label>
+                <label><span data-i="f_stop">Стоп-биты</span> <select id="cStop"><option>1</option><option>2</option></select></label>
               </div>
-              <label title="адрес Modbus slave по умолчанию для всех опросов этого соединения (0–247); опрос может переопределить своим Slave ID">Slave ID <input id="cSlave" type="number" min="0" max="247" value="1" /></label>
-              <label>Таймаут, мс <input id="cTimeout" type="number" value="1000" /></label>
+              <label title="адрес Modbus slave по умолчанию для всех опросов этого соединения (0–247); опрос может переопределить своим Slave ID"><span data-i="f_slave">Slave ID</span> <input id="cSlave" type="number" min="0" max="247" value="1" /></label>
+              <label><span data-i="f_timeout">Таймаут, мс</span> <input id="cTimeout" type="number" value="1000" /></label>
               <div class="formbtns">
-                <button type="button" id="btnPorts" class="mini">⟳ Порты</button>
-                <button type="button" id="btnTestConn" class="mini">Проверить связь</button>
-                <button type="button" id="btnConnCancel" class="mini" hidden>Отмена</button>
+                <button type="button" id="btnPorts" class="mini" data-i="b_ports" data-it="ports_title">⟳ Порты</button>
+                <button type="button" id="btnTestConn" class="mini" data-i="b_test">Проверить связь</button>
+                <button type="button" id="btnConnCancel" class="mini" data-i="b_cancel" hidden>Отмена</button>
               </div>
-              <button type="submit" id="btnConnSubmit" class="primary">Добавить соединение</button>
-              <p class="sub" id="connSlaveHint">Slave ID здесь — адрес устройства по умолчанию; в каждом опросе можно задать свой.</p>
+              <button type="submit" id="btnConnSubmit" class="primary" data-i="b_add_conn">Добавить соединение</button>
+              <p class="sub" id="connSlaveHint" data-i="conn_hint">Slave ID здесь — адрес устройства по умолчанию; в каждом опросе можно задать свой.</p>
             </form>
           </details>
         </div>
 
         <div class="panel">
-          <h3>Опросы / адреса</h3>
+          <h3 data-i="p_polls">Опросы / адреса</h3>
           <div id="pollList" class="list"></div>
           <details id="detPoll">
-            <summary>+ Опрос (свои адреса)</summary>
+            <summary data-i="poll_add_title">+ Опрос (свои адреса)</summary>
             <form id="pollForm" class="form">
-              <label>Имя <input id="pName" value="Holding" /></label>
-              <label>Соединение <select id="pConn"></select></label>
-              <label>Slave ID <input id="pSlave" type="number" min="1" max="247" value="1" /></label>
-              <label>Функция <select id="pFunc">
+              <label><span data-i="f_name">Имя</span> <input id="pName" value="Holding" /></label>
+              <label><span data-i="f_conn">Соединение</span> <select id="pConn"></select></label>
+              <label><span data-i="f_slave">Slave ID</span> <input id="pSlave" type="number" min="1" max="247" value="1" /></label>
+              <label><span data-i="f_func">Функция</span> <select id="pFunc">
                 <option value="3" selected>03 Read Holding</option>
                 <option value="4">04 Read Input</option>
                 <option value="1">01 Read Coils</option>
                 <option value="2">02 Read Discrete</option>
               </select></label>
-              <label>Адрес <input id="pStart" type="number" min="0" max="65535" value="0" /></label>
-              <label>Кол-во <input id="pQty" type="number" min="1" max="125" value="10" /></label>
-              <label>Период, мс <input id="pScan" type="number" min="20" value="1000" /></label>
-              <label>Формат <select id="pFmt">
+              <label><span data-i="f_addr">Адрес</span> <input id="pStart" type="number" min="0" max="65535" value="0" /></label>
+              <label><span data-i="f_qty">Кол-во</span> <input id="pQty" type="number" min="1" max="125" value="10" /></label>
+              <label><span data-i="f_period">Период, мс</span> <input id="pScan" type="number" min="20" value="1000" /></label>
+              <label><span data-i="f_fmt">Формат</span> <select id="pFmt">
                 <option value="u16">uint16</option>
                 <option value="i16">int16</option>
                 <option value="hex">hex16</option>
@@ -115,51 +119,51 @@
               <label>× mult <input id="pMult" type="number" step="any" value="1" /></label>
               <label>÷ div <input id="pDiv" type="number" step="any" value="1" /></label>
               <label>+ offset <input id="pOffset" type="number" step="any" value="0" /></label>
-              <label>Ед. <input id="pUnit" value="" /></label>
-              <label class="check"><input id="pBase" type="checkbox" /> адреса с 1</label>
+              <label><span data-i="f_unit">Ед.</span> <input id="pUnit" value="" /></label>
+              <label class="check"><input id="pBase" type="checkbox" /> <span data-i="f_base1">адреса с 1</span></label>
               <div class="formbtns">
-                <button type="submit" id="btnPollSubmit" class="primary">Добавить опрос</button>
-                <button type="button" id="btnPollCancel" class="mini" hidden>Отмена</button>
+                <button type="submit" id="btnPollSubmit" class="primary" data-i="b_add_poll">Добавить опрос</button>
+                <button type="button" id="btnPollCancel" class="mini" data-i="b_cancel" hidden>Отмена</button>
               </div>
             </form>
           </details>
         </div>
 
         <div class="panel">
-          <h3>Правила (цвет / авария на регистр)</h3>
+          <h3 data-i="p_rules">Правила (цвет / авария на регистр)</h3>
           <div id="ruleList" class="list"></div>
           <details>
-            <summary>+ Правило на регистр</summary>
+            <summary data-i="rule_add_title">+ Правило на регистр</summary>
             <form id="ruleForm" class="form">
-              <label>Регистр <select id="rReg" class="wide"></select></label>
-              <label>Условие <select id="rKind">
-                <option value="gt">значение &gt;</option>
-                <option value="ge">значение ≥</option>
-                <option value="lt">значение &lt;</option>
-                <option value="le">значение ≤</option>
-                <option value="eq">значение =</option>
-                <option value="ne">значение ≠</option>
-                <option value="in_range">в диапазоне</option>
-                <option value="outside_range">вне диапазона</option>
-                <option value="bit">бит установлен</option>
+              <label><span data-i="f_reg">Регистр</span> <select id="rReg" class="wide"></select></label>
+              <label><span data-i="f_cond">Условие</span> <select id="rKind">
+                <option value="gt" data-i="c_gt">значение &gt;</option>
+                <option value="ge" data-i="c_ge">значение ≥</option>
+                <option value="lt" data-i="c_lt">значение &lt;</option>
+                <option value="le" data-i="c_le">значение ≤</option>
+                <option value="eq" data-i="c_eq">значение =</option>
+                <option value="ne" data-i="c_ne">значение ≠</option>
+                <option value="in_range" data-i="c_in">в диапазоне</option>
+                <option value="outside_range" data-i="c_out">вне диапазона</option>
+                <option value="bit" data-i="c_bit">бит установлен</option>
               </select></label>
-              <label>Значение <input id="rValue" type="number" value="0" /></label>
-              <label>И (диапазон / № бита) <input id="rValue2" type="number" value="0" /></label>
-              <label class="row"><span>Текст <input id="rFg" type="color" value="#ffffff" /></span><span>Фон <input id="rBg" type="color" value="#ef4444" /></span></label>
-              <label>Уровень <select id="rSeverity">
-                <option value="">только цвет</option>
+              <label><span data-i="f_value">Значение</span> <input id="rValue" type="number" value="0" /></label>
+              <label><span data-i="f_and">И (диапазон / № бита)</span> <input id="rValue2" type="number" value="0" /></label>
+              <label class="row"><span><span data-i="f_fg">Текст</span> <input id="rFg" type="color" value="#ffffff" /></span><span><span data-i="f_bg">Фон</span> <input id="rBg" type="color" value="#ef4444" /></span></label>
+              <label><span data-i="f_level">Уровень</span> <select id="rSeverity">
+                <option value="" data-i="sev_color">только цвет</option>
                 <option value="info">info</option>
                 <option value="warning">warning</option>
                 <option value="critical">critical</option>
               </select></label>
-              <label>Подпись <input id="rMessage" type="text" placeholder="напр. Перегрев T1" /></label>
-              <label>Меняющийся текст строки <input id="rText" type="text" placeholder="замещает имя строки при срабатывании" /></label>
-              <label class="check"><input id="rBlink" type="checkbox" /> мигать</label>
+              <label><span data-i="f_label">Подпись</span> <input id="rMessage" type="text" data-ip="rule_msg_ph" placeholder="напр. Перегрев T1" /></label>
+              <label><span data-i="f_dyntext">Меняющийся текст строки</span> <input id="rText" type="text" data-ip="rule_text_ph" placeholder="замещает имя строки при срабатывании" /></label>
+              <label class="check"><input id="rBlink" type="checkbox" /> <span data-i="f_blink">мигать</span></label>
               <div class="formbtns">
-                <button type="submit" id="btnRuleSubmit" class="primary">Добавить ветку</button>
-                <button type="button" id="btnRuleCancel" class="mini" hidden>Отмена</button>
+                <button type="submit" id="btnRuleSubmit" class="primary" data-i="b_add_rule">Добавить ветку</button>
+                <button type="button" id="btnRuleCancel" class="mini" data-i="b_cancel" hidden>Отмена</button>
               </div>
-              <p class="sub">Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, до 32 веток на регистр. ✎ в списке — правка ветки.</p>
+              <p class="sub" data-i="rules_hint">Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, до 32 веток на регистр. ✎ в списке — правка ветки.</p>
             </form>
           </details>
         </div>
@@ -168,8 +172,8 @@
       <!-- CENTER: tables / schema -->
       <section class="center">
         <div class="tabs">
-          <div class="tab active" data-view="tables">Таблицы</div>
-          <div class="tab" data-view="schema">Схема (SCADA)</div>
+          <div class="tab active" data-view="tables" data-i="tab_tables">Таблицы</div>
+          <div class="tab" data-view="schema" data-i="tab_schema">Схема (SCADA)</div>
         </div>
 
         <div id="viewTables" class="view">
@@ -179,16 +183,16 @@
         <div id="viewSchema" class="view" hidden>
           <div class="schema-toolbar">
             <select id="wType">
-              <option value="lamp">Лампа</option>
-              <option value="value">Значение</option>
-              <option value="bar">Полоса</option>
-              <option value="gauge">Гейдж</option>
-              <option value="button">Кнопка (запись)</option>
-              <option value="text">Текст</option>
+              <option value="lamp" data-i="w_lamp">Лампа</option>
+              <option value="value" data-i="w_value">Значение</option>
+              <option value="bar" data-i="w_bar">Полоса</option>
+              <option value="gauge" data-i="w_gauge">Гейдж</option>
+              <option value="button" data-i="w_button">Кнопка (запись)</option>
+              <option value="text" data-i="w_text">Текст</option>
             </select>
             <select id="wReg" class="wide"></select>
-            <button id="wAdd" class="primary">Добавить элемент</button>
-            <span class="hint">перетаскивай мышью · двойной клик — настройка · ✕ удалить</span>
+            <button id="wAdd" class="primary" data-i="b_add_w">Добавить элемент</button>
+            <span class="hint" data-i="schema_hint">перетаскивай мышью · двойной клик — настройка · ✕ удалить</span>
           </div>
           <div id="canvas" class="canvas"></div>
         </div>
@@ -197,56 +201,57 @@
       <!-- RIGHT: alarms + stats + comm log -->
       <aside class="side right">
         <div class="panel alarms">
-          <h3 class="al-head">Аварии <span id="alarmBadge" class="abadge" hidden>0</span>
+          <h3 class="al-head"><span data-i="p_alarms">Аварии</span> <span id="alarmBadge" class="abadge" hidden>0</span>
             <span class="spacer"></span>
-            <button id="btnAlarmSound" class="mini" title="звук при появлении новой аварии">🔇</button>
+            <button id="btnAlarmSound" class="mini" data-it="al_sound_title" title="звук при появлении новой аварии">🔇</button>
           </h3>
           <div class="atabs">
-            <div class="atab active" data-at="active">Активные</div>
-            <div class="atab" data-at="hist">История</div>
+            <div class="atab active" data-at="active" data-i="al_active">Активные</div>
+            <div class="atab" data-at="hist" data-i="al_hist">История</div>
           </div>
           <div id="alarmActive" class="alarmlist"></div>
           <div id="alarmHist" class="alarmlist" hidden></div>
           <div class="formbtns">
-            <button id="btnAckAll" class="mini" title="квитировать все активные аварии">Квитировать все</button>
-            <button id="btnAlarmClear" class="mini" title="очистить историю аварий">Очистить историю</button>
+            <button id="btnAckAll" class="mini" data-i="al_ack_all" data-it="al_ack_all_title" title="квитировать все активные аварии">Квитировать все</button>
+            <button id="btnAlarmClear" class="mini" data-i="al_clear" data-it="al_clear_title" title="очистить историю аварий">Очистить историю</button>
           </div>
         </div>
         <div class="panel">
-          <h3>Статистика</h3>
+          <h3 data-i="p_stats">Статистика</h3>
           <div id="stats" class="stats"></div>
         </div>
         <div class="panel">
-          <h3>Журнал обмена</h3>
+          <h3 data-i="p_log">Журнал обмена</h3>
           <div id="log" class="log"></div>
         </div>
       </aside>
     </main>
 
-    <footer id="errbar" class="errbar">нет соединений — добавьте соединение (TCP или COM) и опрос со своими адресами</footer>
+    <footer id="errbar" class="errbar" data-i="footer_empty">нет соединений — добавьте соединение (TCP или COM) и опрос со своими адресами</footer>
 
     <div id="modal" class="modal" hidden>
       <div class="modal-box">
         <div id="modalTitle" class="modal-title"></div>
         <input id="modalInput" class="modal-input" />
         <div class="modal-actions">
-          <button id="modalOk" class="primary">Записать</button>
-          <button id="modalCancel">Отмена</button>
+          <button id="modalOk" class="primary" data-i="m_write">Записать</button>
+          <button id="modalCancel" data-i="b_cancel">Отмена</button>
         </div>
       </div>
     </div>
 
     <div id="wmodal" class="modal" hidden>
       <div class="modal-box">
-        <div class="modal-title">Настройка элемента</div>
+        <div class="modal-title" data-i="m_widget">Настройка элемента</div>
         <div id="wfields" class="form"></div>
         <div class="modal-actions">
-          <button id="wmodalOk" class="primary">Сохранить</button>
-          <button id="wmodalCancel">Отмена</button>
+          <button id="wmodalOk" class="primary" data-i="m_save">Сохранить</button>
+          <button id="wmodalCancel" data-i="b_cancel">Отмена</button>
         </div>
       </div>
     </div>
 
+    <script src="i18n.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

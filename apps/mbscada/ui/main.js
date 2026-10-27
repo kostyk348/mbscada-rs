@@ -61,29 +61,29 @@ function sparkline(pollId, r, display) {
 const CSV = { on: false, path: "", last: {} };
 
 async function csvToggle() {
-  if (!hasTauri) { footer("CSV-лог — только в Tauri-сборке", true); return; }
+  if (!hasTauri) { footer(t("csv_only_tauri"), true); return; }
   if (CSV.on) {
     CSV.on = false;
     CSV.path = "";
     csvBtnState();
-    footer("CSV-лог остановлен");
+    footer(t("csv_stopped"));
     return;
   }
   try {
     const path = await invoke("plugin:dialog|save", {
       options: {
-        title: "Куда писать CSV-лог",
+        title: t("csv_dialog"),
         defaultPath: "mbscada-log.csv",
         filters: [{ name: "CSV", extensions: ["csv"] }],
       },
     });
-    if (!path) { footer("csv-лог отменён"); return; }
+    if (!path) { footer(t("csv_cancelled")); return; }
     CSV.on = true;
     CSV.path = path;
     CSV.last = {};
     await invoke("csv_log", { path: CSV.path, lines: ["time,poll_id,poll,func,addr,name,display,quality"] });
     csvBtnState();
-    footer("CSV-лог пишется: " + path);
+    footer(t("csv_running") + path);
   } catch (e) { footer(String(e), true); }
 }
 
@@ -172,7 +172,7 @@ function renderAlarms() {
   if (!act || !hist) return;
   act.innerHTML = "";
   const items = Object.values(AL.active).sort((a, b) => (a.ack - b.ack) || (b.since - a.since));
-  if (!items.length) act.innerHTML = `<div class="empty">активных аварий нет</div>`;
+  if (!items.length) act.innerHTML = `<div class="empty">${esc(t("al_none"))}</div>`;
   for (const a of items) {
     const el = document.createElement("div");
     el.className = "al-item lv-" + a.level + (a.ack ? " ack" : "");
@@ -180,15 +180,15 @@ function renderAlarms() {
         <span class="al-time">${hms(a.since)}</span>
         <b class="grow">${esc(a.name)}</b>
         <span class="mono">${esc(a.display)}${a.unit ? " " + esc(a.unit) : ""}</span></div>
-      <div class="al-bot"><span class="grow">${esc(a.msg)}${a.quality === "bad" ? ' · <span class="bad">нет связи</span>' : ""}</span>
+      <div class="al-bot"><span class="grow">${esc(a.msg)}${a.quality === "bad" ? ' · <span class="bad">' + esc(t("al_bad_conn")) + "</span>" : ""}</span>
         <span class="sub">${esc(a.poll)} @${esc(a.disp)}</span></div>`;
-    el.title = "клик — перейти к строке в таблице";
+    el.title = t("al_jump_hint");
     el.onclick = () => alarmJump(a.key);
-    el.appendChild(miniBtn(a.ack ? "✓" : "квит.", (ev) => { ev.stopPropagation(); a.ack = true; renderAlarms(); }));
+    el.appendChild(miniBtn(a.ack ? t("al_acked") : t("al_ack"), (ev) => { ev.stopPropagation(); a.ack = true; renderAlarms(); }));
     act.appendChild(el);
   }
   hist.innerHTML = "";
-  if (!AL.hist.length) hist.innerHTML = `<div class="empty">история пуста</div>`;
+  if (!AL.hist.length) hist.innerHTML = `<div class="empty">${esc(t("al_hist_empty"))}</div>`;
   for (const a of AL.hist) {
     const el = document.createElement("div");
     el.className = "al-item lv-" + a.level + " ack hist";
@@ -225,21 +225,40 @@ function hms(t) {
 }
 function fmtDur(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return s + "с";
+  if (s < 60) return s + t("dur_s");
   const m = Math.floor(s / 60);
-  if (m < 60) return m + "м" + (s % 60) + "с";
-  return Math.floor(m / 60) + "ч" + (m % 60) + "м";
+  if (m < 60) return m + t("dur_m") + (s % 60) + t("dur_s");
+  return Math.floor(m / 60) + t("dur_h") + (m % 60) + t("dur_m");
+}
+
+// Подстановка {ключей} в словарные строки: tfmt("write_title", {addr: 5, ...})
+function tfmt(key, vars) {
+  let s = t(key);
+  for (const k in vars) s = s.split("{" + k + "}").join(String(vars[k]));
+  return s;
 }
 
 /* ------------------------------------------------------------ bootstrap -- */
 async function boot() {
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
+  window.LANG = window.i18nLang();
+  const ls = $("langSel");
+  if (ls) {
+    ls.value = window.LANG;
+    ls.onchange = () => {
+      window.LANG = ls.value;
+      localStorage.setItem("mbscada.lang", ls.value);
+      applyLangStatic();
+      render();
+    };
+  }
+  applyLangStatic();
   await refreshPorts();
   wireForms();
   setInterval(refresh, 300);
   refresh();
   if (!hasTauri) {
-    footer("⚠ Tauri IPC недоступен (window.__TAURI__ не найден) — кнопки не работают", true);
+    footer(t("no_tauri"), true);
   }
 }
 
@@ -295,13 +314,13 @@ function editConn(c) {
   $("cSlave").value = c.slave != null ? c.slave : 1;
   $("cTimeout").value = c.timeout_ms || 1000;
   $("detConn").open = true;
-  $("btnConnSubmit").textContent = "Сохранить соединение";
+  $("btnConnSubmit").textContent = t("edit_conn");
   $("btnConnCancel").hidden = false;
 }
 
 function endConnEdit() {
   editingConn = null;
-  $("btnConnSubmit").textContent = "Добавить соединение";
+  $("btnConnSubmit").textContent = t("b_add_conn");
   $("btnConnCancel").hidden = true;
 }
 
@@ -351,7 +370,7 @@ async function refresh() {
       await csvMaybeAppend(pollsForCsv);
     }
     render();
-  } catch (e) { footer("ошибка: " + e, true); }
+  } catch (e) { footer(t("err_prefix") + e, true); }
 }
 
 /* ------------------------------------------------------------- rendering -- */
@@ -398,13 +417,13 @@ function renderChips() {
     el.innerHTML = `<span class="dot ${dot}"></span>${esc(v.name)} <span class="sub">${esc(v.describe)}</span>`;
     box.appendChild(el);
   }
-  if (!views.length) box.innerHTML = `<span class="empty">соединений нет</span>`;
+  if (!views.length) box.innerHTML = `<span class="empty">${esc(t("conns_none"))}</span>`;
 }
 
 function renderConnList() {
   const box = $("connList");
   box.innerHTML = "";
-  if (!cfg.connections.length) { box.innerHTML = `<div class="empty">добавьте соединение →</div>`; return; }
+  if (!cfg.connections.length) { box.innerHTML = `<div class="empty">${esc(t("add_conn_first"))}</div>`; return; }
   cfg.connections.forEach((c, i) => {
     const el = document.createElement("div");
     el.className = "item" + (editingConn === c ? " editing" : "");
@@ -422,13 +441,13 @@ function renderConnList() {
 function renderPollList() {
   const box = $("pollList");
   box.innerHTML = "";
-  if (!cfg.polls.length) { box.innerHTML = `<div class="empty">добавьте опрос →</div>`; return; }
+  if (!cfg.polls.length) { box.innerHTML = `<div class="empty">${esc(t("add_poll_first"))}</div>`; return; }
   cfg.polls.forEach((p, i) => {
     const el = document.createElement("div");
     el.className = "item" + (editingPoll === p ? " editing" : "");
     const bound = cfg.connections.some((c) => c.id === p.conn_id);
-    const slave = p.slave ? `slave ${p.slave}` : `slave из соединения`;
-    el.innerHTML = `<span class="grow"><b>${esc(p.name)}</b> <span class="sub">${FUNC[p.func] || p.func} @${p.raw_start != null ? p.raw_start : p.start}×${p.qty} · ${slave} · ${FMTL[p.fmt] || p.fmt} · ${p.scan_ms}мс${bound ? "" : ' · <span class="bad">нет соединения</span>'}</span></span>`;
+    const slave = p.slave ? `slave ${p.slave}` : t("slave_from_conn");
+    el.innerHTML = `<span class="grow"><b>${esc(p.name)}</b> <span class="sub">${FUNC[p.func] || p.func} @${p.raw_start != null ? p.raw_start : p.start}×${p.qty} · ${slave} · ${FMTL[p.fmt] || p.fmt} · ${p.scan_ms}${t("ms")}${bound ? "" : ' · <span class="bad">' + esc(t("no_conn")) + "</span>"}</span></span>`;
     el.appendChild(miniBtn("✎", () => editPoll(p)));
     el.appendChild(miniBtn("✕", () => {
       if (editingPoll === p) { endPollEdit(); }
@@ -442,7 +461,7 @@ function renderPollList() {
 function renderRuleList() {
   const box = $("ruleList");
   box.innerHTML = "";
-  if (!cfg.rules.length) { box.innerHTML = `<div class="empty">правил нет</div>`; return; }
+  if (!cfg.rules.length) { box.innerHTML = `<div class="empty">${esc(t("no_rules"))}</div>`; return; }
   // Номер ветки внутри своего регистра: 1..32 (первая сработавшая выигрывает).
   const ord = {};
   cfg.rules.forEach((r) => {
@@ -459,7 +478,7 @@ function renderRuleList() {
     const poll = findCfgPoll(r.poll);
     const addr = poll ? (poll.start || 0) + r.offset * stepOf(poll.fmt) : r.offset;
     const name = poll ? regLabel(poll, addr) : `poll ${r.poll}`;
-    el.insertAdjacentHTML("beforeend", `<span class="grow"><b>№${r._ord}/32 ${esc(name)}</b> <span class="sub">${condText(r.cond)}${r.text ? " · ⌨" + esc(r.text) : ""}${r.severity ? " · ⚠" + r.severity : ""}${r.blink ? " · мигает" : ""}</span></span>`);
+    el.insertAdjacentHTML("beforeend", `<span class="grow"><b>№${r._ord}/32 ${esc(name)}</b> <span class="sub">${condText(r.cond)}${r.text ? " · ⌨" + esc(r.text) : ""}${r.severity ? " · ⚠" + r.severity : ""}${r.blink ? " · " + t("blinking") : ""}</span></span>`);
     el.appendChild(miniBtn("✎", () => editRule(r)));
     el.appendChild(miniBtn("✕", () => {
       if (editingRule === r) endRuleEdit();
@@ -494,7 +513,7 @@ function editRule(r) {
   $("rMessage").value = r.message || r.name || "";
   $("rText").value = r.text || "";
   $("rBlink").checked = !!r.blink;
-  $("btnRuleSubmit").textContent = "Сохранить ветку";
+  $("btnRuleSubmit").textContent = t("edit_rule");
   $("btnRuleCancel").hidden = false;
   const det = $("btnRuleSubmit").closest("details");
   if (det) det.open = true;
@@ -502,7 +521,7 @@ function editRule(r) {
 
 function endRuleEdit() {
   editingRule = null;
-  $("btnRuleSubmit").textContent = "Добавить ветку";
+  $("btnRuleSubmit").textContent = t("b_add_rule");
   $("btnRuleCancel").hidden = true;
 }
 
@@ -510,7 +529,7 @@ function renderGrid() {
   const grid = $("grid");
   grid.innerHTML = "";
   const polls = snap && snap.polls.length ? snap.polls : cfg.polls.map((p) => ({ ...p, rows: [], last_poll_ms: 0 }));
-  if (!polls.length) { grid.innerHTML = `<div class="empty" style="padding:30px">Добавьте соединение и опрос слева — таблица появится здесь, затем «Старт».</div>`; return; }
+  if (!polls.length) { grid.innerHTML = `<div class="empty" style="padding:30px">${esc(t("grid_empty"))}</div>`; return; }
   const cfgById = {};
   cfg.polls.forEach((q) => { cfgById[q.id] = q; });
   for (const p of polls) {
@@ -519,15 +538,15 @@ function renderGrid() {
     const head = document.createElement("div");
     head.className = "card-head";
     const cn = cfg.connections.find((c) => c.id === p.conn_id);
-    const connTxt = cn ? esc(cn.name) : '<span class="bad">нет соединения</span>';
+    const connTxt = cn ? esc(cn.name) : `<span class="bad">${esc(t("no_conn"))}</span>`;
     head.innerHTML = `<h2>${esc(p.name)}</h2>
-      <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · slave ${p.slave} · ${p.scan_ms}мс · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
-      <span class="stat">${p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " мс" : ""}</span>`;
+      <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · slave ${p.slave} · ${p.scan_ms}${t("ms")} · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
+      <span class="stat">${p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " " + t("ms") : ""}</span>`;
     card.appendChild(head);
 
     const table = document.createElement("table");
     table.className = "regtable";
-    table.innerHTML = `<thead><tr><th>Адрес</th><th>Имя</th><th>Значение</th><th>Тренд</th><th>Ед.</th><th>Кач.</th><th>Авария</th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>${t("th_addr")}</th><th>${t("th_name")}</th><th>${t("th_value")}</th><th>${t("th_trend")}</th><th>${t("th_unit")}</th><th>${t("th_quality")}</th><th>${t("th_alarm")}</th></tr></thead>`;
     const tb = document.createElement("tbody");
     const rows = (p.rows && p.rows.length) ? p.rows : synthRows(cfgById[p.id] || p);
     for (const r of rows) {
@@ -550,13 +569,13 @@ function renderGrid() {
       tr.innerHTML = `<td class="mono">${r.disp_addr}</td><td>${esc(r.name)}</td>
         <td class="mono"><b>${esc(r.display)}</b></td><td>${spark}</td><td>${esc(r.unit)}</td>
         <td class="${r.quality}">${r.quality}</td><td>${alarm}</td>`;
-      tr.title = "клик — записать значение";
+      tr.title = t("row_write_hint");
       tr.onclick = () => writeRow(p, r);
       tb.appendChild(tr);
     }
     if (!rows.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="7" class="empty">нет данных</td>`;
+      tr.innerHTML = `<td colspan="7" class="empty">${esc(t("no_data"))}</td>`;
       tb.appendChild(tr);
     }
     table.appendChild(tb);
@@ -575,8 +594,8 @@ function renderStats() {
     box.insertAdjacentHTML("beforeend", `
       <div class="stat-line"><span>${esc(c.name)}</span><b class="${s.online ? "good" : "bad"}">${s.online ? "online" : "offline"}</b></div>
       <div class="stat-line"><span>TX / RX</span><b>${s.tx} / ${s.rx}</b></div>
-      <div class="stat-line"><span>ошибки / таймауты</span><b>${s.errors} / ${s.timeouts}</b></div>
-      <div class="stat-line"><span>отклик (тек/сред), мс</span><b>${s.last_ms.toFixed(1)} / ${s.avg_ms.toFixed(1)}</b></div>
+      <div class="stat-line"><span>${t("err_timeouts")}</span><b>${s.errors} / ${s.timeouts}</b></div>
+      <div class="stat-line"><span>${t("resp")}</span><b>${s.last_ms.toFixed(1)} / ${s.avg_ms.toFixed(1)}</b></div>
       ${s.last_error ? `<div class="stat-line"><span class="bad">${esc(s.last_error)}</span></div>` : ""}`);
   }
 }
@@ -647,12 +666,12 @@ function editPoll(p) {
   $("pUnit").value = p.unit || "";
   $("pBase").checked = !!p.base_one;
   $("detPoll").open = true;
-  $("btnPollSubmit").textContent = "Сохранить опрос";
+  $("btnPollSubmit").textContent = t("edit_poll");
   $("btnPollCancel").hidden = false;
 }
 function endPollEdit() {
   editingPoll = null;
-  $("btnPollSubmit").textContent = "Добавить опрос";
+  $("btnPollSubmit").textContent = t("b_add_poll");
   $("btnPollCancel").hidden = true;
 }
 function regLabel(p, addr) {
@@ -697,7 +716,7 @@ async function stopPolling() {
 async function writeRow(poll, row) {
   if (!hasTauri) return;
   openValueModal(
-    `Запись ${FUNC[poll.func]} @ ${row.disp_addr}\n${row.name}\nтекущее: ${row.display}`,
+    tfmt("write_title", { func: FUNC[poll.func] || poll.func, addr: row.disp_addr, name: row.name, cur: row.display }),
     row.raw,
     async (val) => {
       try {
@@ -739,14 +758,14 @@ async function saveProject() {
   try {
     const path = await invoke("plugin:dialog|save", {
       options: {
-        title: "Сохранить проект",
+        title: t("save_dialog"),
         defaultPath: "project.mbscada.json",
         filters: [{ name: "mbSCADA project", extensions: ["json"] }],
       },
     });
-    if (!path) { footer("сохранение отменено"); return; }
+    if (!path) { footer(t("save_cancelled")); return; }
     await invoke("save_project", { path, data: JSON.stringify(cfg, null, 2) });
-    footer("сохранено: " + path);
+    footer(t("saved") + path);
   } catch (e) { footer(String(e), true); }
 }
 
@@ -754,14 +773,14 @@ async function loadProject() {
   if (!hasTauri) return;
   try {
     const sel = await openDialog({
-      title: "Открыть проект",
+      title: t("open_dialog"),
       multiple: false,
       filters: [{ name: "mbSCADA project", extensions: ["json"] }],
     });
-    if (!sel || !sel.length) { footer("открытие отменено"); return; }
+    if (!sel || !sel.length) { footer(t("open_cancelled")); return; }
     cfg = JSON.parse(await invoke("load_project", { path: sel[0] }));
     await apply();
-    footer("загружено: " + sel[0]);
+    footer(t("loaded") + sel[0]);
   } catch (e) { footer(String(e), true); }
 }
 
@@ -769,11 +788,11 @@ async function importFiles() {
   if (!hasTauri) return;
   try {
     const sel = await openDialog({
-      title: "Выберите файлы Modbus Poll",
+      title: t("pick_files"),
       multiple: true,
       filters: [{ name: "Modbus Poll", extensions: ["mbp", "mbw"] }],
     });
-    if (!sel || !sel.length) { footer("импорт отменён"); return; }
+    if (!sel || !sel.length) { footer(t("import_cancelled")); return; }
     await doImport(sel);
   } catch (e) { footer(String(e), true); }
 }
@@ -782,11 +801,11 @@ async function importFolder() {
   if (!hasTauri) return;
   try {
     const sel = await openDialog({
-      title: "Выберите папку с .mbp / .mbw",
+      title: t("pick_folder"),
       directory: true,
       multiple: false,
     });
-    if (!sel || !sel.length) { footer("импорт отменён"); return; }
+    if (!sel || !sel.length) { footer(t("import_cancelled")); return; }
     await doImport([sel[0]]);
   } catch (e) { footer(String(e), true); }
 }
@@ -818,8 +837,8 @@ async function doImport(paths) {
   const ok = res.reports.filter((r) => r.ok).length;
   const bad = res.reports.filter((r) => !r.ok);
   const unbound = res.polls.filter((p) => !p.conn_id).length;
-  let msg = `Импорт: ${res.reports.length} записей — ок ${ok}, ошибок ${bad.length}; +${res.polls.length} опросов → ваши соединения (из файлов не добавляются)`;
-  if (unbound) msg += `; без соединения: ${unbound} — добавьте соединение и привяжите опрос (✎)`;
+  let msg = tfmt("imp_summary", { n: res.reports.length, ok, bad: bad.length, p: res.polls.length });
+  if (unbound) msg += tfmt("imp_unbound", { n: unbound });
   footer(msg, unbound > 0);
   if (bad.length) console.warn("не импортировано:", bad);
   console.log("import reports", res.reports);
@@ -943,7 +962,7 @@ function wireForms() {
     e.preventDefault();
     const [pid, addr] = ($("rReg").value || "").split(":").map(Number);
     const poll = findCfgPoll(pid);
-    if (!poll) { footer("выберите регистр — сначала добавьте опрос", true); return; }
+    if (!poll) { footer(t("pick_reg_first"), true); return; }
     const offset = Math.round((addr - (poll.start || 0)) / stepOf(poll.fmt));
     const kind = $("rKind").value;
     const v = Number($("rValue").value);
@@ -969,7 +988,7 @@ function wireForms() {
       // Up to 32 value-dependent branches per register (Modbus Poll allows 2
       // colour rules per window; we extend this to 32 branches per row).
       const used = cfg.rules.filter((r) => r.poll === pid && r.offset === offset).length;
-      if (used >= 32) { footer("у регистра уже 32 ветки — предел", true); return; }
+      if (used >= 32) { footer(t("limit32"), true); return; }
       cfg.rules.push(Object.assign({ id: Date.now() % 100000 }, item));
     }
     apply();
@@ -1027,7 +1046,7 @@ function liveMap() {
 
 function addWidget() {
   const val = $("wReg").value;
-  if (!val) { footer("нет регистров — сначала добавьте опрос", true); return; }
+  if (!val) { footer(t("no_widgets"), true); return; }
   const [pid, addr] = val.split(":").map(Number);
   const poll = findCfgPoll(pid);
   cfg.mimic = cfg.mimic || [];
@@ -1126,7 +1145,7 @@ function gaugeSvg(v, min, max, level) {
 }
 
 async function buttonWrite(w) {
-  if (!hasTauri) { footer("запись доступна только в приложении", true); return; }
+  if (!hasTauri) { footer(t("write_only_app"), true); return; }
   const row = liveMap()[w.poll + ":" + w.addr] || null;
   const onV = w.onVal != null ? Number(w.onVal) : 1;
   const offV = w.offVal != null ? Number(w.offVal) : 0;
@@ -1135,7 +1154,7 @@ async function buttonWrite(w) {
   const target = cur === onV ? offV : onV;
   try {
     await invoke("write_value", { pollId: w.poll, addr: w.addr, value: target & 0xffff });
-    footer(`схема: записано @${w.addr} = ${target}`);
+    footer(tfmt("wrote", { addr: w.addr, v: target }));
     refresh();
   } catch (e) { footer(String(e), true); }
 }

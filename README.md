@@ -23,7 +23,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 **English** · [Русский](README.ru.md)
 
-<img src="docs/img/app.png" alt="mbSCADA — live poll tables with quality badges and per-row sparklines" width="100%">
+<img src="docs/img/app-en.png" alt="mbSCADA — live poll tables with quality badges, per-row sparklines and the alarm side panel" width="100%">
 
 </div>
 
@@ -35,6 +35,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 - 🤝 **Drop-in for your existing configs.** Real Modbus Poll `.mbp` / `.mbw` files import by folder — and a byte-exact round-trip layer (`write(parse(bytes)) == bytes`, proven on real 10.5 files) keeps them intact.
 - 🎨 **32 styled branches per row.** The original gives you two colour rules; here every row gets a first-match rule tree with per-branch dynamic row text («0 → Закрыт, 1 → Открыт»).
 - 📈 **Trends, alarms, CSV.** Per-row sparklines, hi/hi‑hi/lo/lo‑lo alarms, blink styles — and a one-click CSV value log.
+- 🌐 **RU/EN built in.** One switch in the toolbar flips the entire UI; docs ship in both languages.
 - ⚡ **Fast & local.** A multithreaded engine (`mb-engine`) drives all connections concurrently; no telemetry, no cloud, nothing leaves the machine.
 
 <details open>
@@ -44,8 +45,8 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 | | |
 |---|---|
-| **Live tables** | <img src="docs/img/app.png" width="100%"> |
-| **SCADA + traffic log** | <img src="docs/img/scada.png" width="100%"> |
+| **Live tables + alarm panel** | <img src="docs/img/app-en.png" width="100%"> |
+| **SCADA mimic + widgets** | <img src="docs/img/scada-en.png" width="100%"> |
 
 </details>
 
@@ -67,7 +68,7 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 
 ### 📊 Live tables
 
-<img src="docs/img/app.png" alt="Live tables: imported KAT2 poll flowing at 1000 ms with quality badges" width="100%">
+<img src="docs/img/app-en.png" alt="Live tables: colored alarm rows, per-row sparklines and the alarm side panel" width="100%">
 
 - Every poll is an independent **view of the address space**: own function, own register window, own scaling `×mult ÷div +offset`, own 0/1 address base.
 - Values render in **Modbus-Poll-style formats**: `u16 / i16 / hex16 / bin16 / ascii16 / u16(swapped)` · `u32 / i32 / hex32` · `float32` in word orders **ABCD / CDAB / BADC / DCBA** · 64-bit `u64 / i64 / f64`.
@@ -80,12 +81,13 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 - Styling rules with **up to 32 branches per row** and operators `> ≥ < ≤ = ≠`, in-range / out-of-range, **bit test**.
 - First matching branch wins — the classic «Rule 1 over Rule 2» becomes a full priority list.
 - **Dynamic row text** per branch: the row label is replaced when a branch fires (state machines live in the table header).
+- **Alarm side panel**: active alarms surface as cards — severity, fired-at, live value, message — acknowledge one or all, cleared alarms drop to **history** with durations, optional **beep**, and a click jumps to the table row.
 
 ### 🗺 SCADA mode (mimic diagrams)
 
 | | |
 |---|---|
-| <img src="docs/img/scada.png" width="100%"> | Editor with shapes and lamp widgets bound to live registers… plus the **traffic log** on the right: every TX/RX, every error and per-response turnaround |
+| <img src="docs/img/scada-en.png" width="100%"> | Editor with lamps, gauges, bars, live values and **toggle-write buttons** bound to registers — every widget configurable by double-click… plus the **alarm panel** and **traffic log** on the right |
 
 Modbus Poll has no SCADA mode. That is the point of mbSCADA.
 
@@ -168,9 +170,10 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Per-row sparklines + CSV value log (v0.4)
 - ✅ In-place editing of connections / polls / rules; per-connection default slave ID; imports bound to your own connections (v1.0)
 - ✅ Prebuilt release bundles: Windows x64, Linux x86_64 + aarch64, macOS Intel + Apple Silicon (v1.0)
+- ✅ Alarm side panel (ack, history, sound, jump-to-row) + SCADA gauge / toggle-write widgets (v1.1)
+- ✅ One-click RU/EN UI switch, bilingual docs, refreshed screenshots (v1.1)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
-- ✅ Alarm side panel: active alarms with ack, history, sound and jump-to-row (v1.1)
 
 ## ⁇ FAQ
 
@@ -199,4 +202,3 @@ Issues and PRs welcome. The engine is test-first: `crates/mb-engine`, `crates/mb
 [Download](https://github.com/kostyk348/mbscada-rs/releases/latest) · [Build it](#-getting-started) · [Roadmap](#-roadmap) · [License (MIT)](LICENSE)
 
 </div>
-- ✅ SCADA widgets: gauge and toggle-write button, per-widget settings (v1.1)
