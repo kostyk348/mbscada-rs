@@ -244,19 +244,29 @@ impl Engine {
         let polls = g
             .polls
             .iter()
-            .map(|p| PollView {
-                id: p.id,
-                name: p.name.clone(),
-                conn_id: p.conn_id.clone(),
-                func: p.func,
-                slave: p.slave,
-                start: p.start,
-                qty: p.qty,
-                scan_ms: p.scan_ms,
-                fmt: p.fmt,
-                enabled: p.enabled,
-                last_poll_ms: g.poll_ms.get(&p.id).copied().unwrap_or(0.0),
-                rows: g.rows.get(&p.id).cloned().unwrap_or_default(),
+            .map(|p| {
+                // Effective slave: a poll with slave = 0 inherits the
+                // connection's default slave address.
+                let conn = g.connections.get(&p.conn_id);
+                let eff_slave = if p.slave == 0 {
+                    conn.map(|c| c.slave).unwrap_or(1)
+                } else {
+                    p.slave
+                };
+                PollView {
+                    id: p.id,
+                    name: p.name.clone(),
+                    conn_id: p.conn_id.clone(),
+                    func: p.func,
+                    slave: eff_slave,
+                    start: p.start,
+                    qty: p.qty,
+                    scan_ms: p.scan_ms,
+                    fmt: p.fmt,
+                    enabled: p.enabled,
+                    last_poll_ms: g.poll_ms.get(&p.id).copied().unwrap_or(0.0),
+                    rows: g.rows.get(&p.id).cloned().unwrap_or_default(),
+                }
             })
             .collect();
 
@@ -477,6 +487,17 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
             Some(c) => c,
             None => break,
         };
+        // Effective slave: a poll with slave = 0 inherits the connection's
+        // default slave address ("slave ID" set on the connection itself).
+        let polls: Vec<Poll> = polls
+            .into_iter()
+            .map(|mut p| {
+                if p.slave == 0 {
+                    p.slave = conn.slave;
+                }
+                p
+            })
+            .collect();
         if polls.is_empty() {
             thread::sleep(Duration::from_millis(300));
             continue;
@@ -611,10 +632,17 @@ fn do_command(inner: &Arc<Mutex<Inner>>, tr: &mut Box<dyn Transport>, conn_id: &
                 .lock()
                 .ok()
                 .and_then(|g| g.polls.iter().find(|p| p.id == poll_id).cloned());
-            let poll = match poll {
+            let mut poll = match poll {
                 Some(p) => p,
                 None => return,
             };
+            // Same slave inheritance as the read path: poll.slave = 0 means
+            // "use the connection default".
+            if poll.slave == 0 {
+                if let Some(c) = inner.lock().ok().and_then(|g| g.connections.get(conn_id).cloned()) {
+                    poll.slave = c.slave;
+                }
+            }
             let req = if multi {
                 Request::WriteMultipleRegisters {
                     addr,

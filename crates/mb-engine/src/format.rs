@@ -26,6 +26,9 @@ pub enum Fmt {
     /// Two ASCII chars per register (0x4142 -> "AB").
     Ascii16,
     /// Byte-swapped u16 (0x1234 -> 0x3412), Modbus word-swapped ints.
+    // Alias: older project files / UI builds sent the name without the
+    // underscore, which serde rejects — keep them loadable.
+    #[serde(alias = "u16swapped")]
     U16Swapped,
     /// 64-bit unsigned over four registers ABCD.
     U64,

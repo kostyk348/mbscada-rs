@@ -17,13 +17,15 @@
         <option value="base1">адреса с 1</option>
       </select>
       <div class="actions">
-        <button id="btnImportFiles">Импорт файлов…</button>
-        <button id="btnImportFolder">Импорт папки…</button>
-        <button id="btnStart" class="primary">▶ Старт</button>
-        <button id="btnStop">■ Стоп</button>
+        <button id="btnImportFiles" title="импорт .mbp / .mbw файлов Modbus Poll">Импорт файлов…</button>
+        <button id="btnImportFolder" title="импорт всех .mbp / .mbw из папки">Импорт папки…</button>
+        <span class="sep"></span>
+        <button id="btnStart" class="primary" title="запустить опрос">▶ Старт</button>
+        <button id="btnStop" title="остановить опрос">■ Стоп</button>
         <button id="csvBtn" title="лог значений в CSV (пишутся только изменившиеся строки)">CSV</button>
-        <button id="btnSave">Сохранить</button>
-        <button id="btnLoad">Открыть</button>
+        <span class="sep"></span>
+        <button id="btnSave" title="сохранить проект (соединения, опросы, правила, схема)">Сохранить</button>
+        <button id="btnLoad" title="открыть проект mbSCADA">Открыть</button>
       </div>
     </header>
 
@@ -42,6 +44,8 @@
                   <option value="tcp">TCP/IP</option>
                   <option value="rtu">Serial Port (RTU)</option>
                   <option value="rtu_over_tcp">RTU over TCP/IP</option>
+                  <option value="ascii">Serial Port (ASCII)</option>
+                  <option value="ascii_over_tcp">ASCII over TCP/IP</option>
                 </select>
               </label>
               <div id="tcpFields">
@@ -59,12 +63,15 @@
                 <label>Биты данных <select id="cData"><option>8</option><option>7</option><option>6</option><option>5</option></select></label>
                 <label>Стоп-биты <select id="cStop"><option>1</option><option>2</option></select></label>
               </div>
+              <label title="адрес Modbus slave по умолчанию для всех опросов этого соединения (0–247); опрос может переопределить своим Slave ID">Slave ID <input id="cSlave" type="number" min="0" max="247" value="1" /></label>
               <label>Таймаут, мс <input id="cTimeout" type="number" value="1000" /></label>
               <div class="formbtns">
-                <button type="button" id="btnPorts" class="mini">⟳ Обновить порты</button>
+                <button type="button" id="btnPorts" class="mini">⟳ Порты</button>
                 <button type="button" id="btnTestConn" class="mini">Проверить связь</button>
+                <button type="button" id="btnConnCancel" class="mini" hidden>Отмена</button>
               </div>
-              <button class="primary">Добавить соединение</button>
+              <button type="submit" id="btnConnSubmit" class="primary">Добавить соединение</button>
+              <p class="sub" id="connSlaveHint">Slave ID здесь — адрес устройства по умолчанию; в каждом опросе можно задать свой.</p>
             </form>
           </details>
         </div>
@@ -93,7 +100,7 @@
                 <option value="hex">hex16</option>
                 <option value="bin">bin16</option>
                 <option value="ascii16">ascii16</option>
-                <option value="u16swapped">u16 (swap AB/CD)</option>
+                <option value="u16_swapped">u16 (swap AB/CD)</option>
                 <option value="u32">uint32</option>
                 <option value="i32">int32</option>
                 <option value="hex32">hex32</option>
@@ -110,7 +117,10 @@
               <label>+ offset <input id="pOffset" type="number" step="any" value="0" /></label>
               <label>Ед. <input id="pUnit" value="" /></label>
               <label class="check"><input id="pBase" type="checkbox" /> адреса с 1</label>
-              <button class="primary">Добавить опрос</button>
+              <div class="formbtns">
+                <button type="submit" id="btnPollSubmit" class="primary">Добавить опрос</button>
+                <button type="button" id="btnPollCancel" class="mini" hidden>Отмена</button>
+              </div>
             </form>
           </details>
         </div>
@@ -145,8 +155,11 @@
               <label>Подпись <input id="rMessage" type="text" placeholder="напр. Перегрев T1" /></label>
               <label>Меняющийся текст строки <input id="rText" type="text" placeholder="замещает имя строки при срабатывании" /></label>
               <label class="check"><input id="rBlink" type="checkbox" /> мигать</label>
-              <button class="primary">Добавить ветку (до 32 на регистр)</button>
-              <p class="sub">Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, только до 32 веток на регистр.</p>
+              <div class="formbtns">
+                <button type="submit" id="btnRuleSubmit" class="primary">Добавить ветку</button>
+                <button type="button" id="btnRuleCancel" class="mini" hidden>Отмена</button>
+              </div>
+              <p class="sub">Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, до 32 веток на регистр. ✎ в списке — правка ветки.</p>
             </form>
           </details>
         </div>

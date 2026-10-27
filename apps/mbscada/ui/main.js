@@ -6,11 +6,14 @@ const invoke = hasTauri ? window.__TAURI__.core.invoke : null;
 let cfg = { connections: [], polls: [], rules: [] };
 let snap = null;
 let editingPoll = null;
+let editingConn = null;
+let editingRule = null;
+let guideKey = "";
 const $ = (id) => document.getElementById(id);
 
 const FUNC = { 1: "01 Coils", 2: "02 Discr", 3: "03 Holding", 4: "04 Input" };
 const FMTL = { u16: "u16", i16: "i16", hex: "hex16", bin: "bin16", ascii16: "ascii16",
-  u16swapped: "u16 swp", u32: "u32", i32: "i32", hex32: "hex32",
+  u16_swapped: "u16 swp", u32: "u32", i32: "i32", hex32: "hex32",
   f32_abcd: "f32 ABCD", f32_cdab: "f32 CDAB", f32_badc: "f32 BADC", f32_dcba: "f32 DCBA",
   u64: "u64", i64: "i64", f64: "f64" };
 const KINDL = { tcp: "TCP", rtu: "Serial", rtu_over_tcp: "RTU/TCP", ascii: "ASCII", ascii_over_tcp: "ASCII/TCP" };
@@ -155,7 +158,64 @@ function connFromForm() {
       stop_bits: Number($("cStop").value),
     },
     timeout_ms: Number($("cTimeout").value),
+    slave: Math.max(0, Math.min(247, Number($("cSlave").value) || 0)),
   };
+}
+
+function editConn(c) {
+  editingConn = c;
+  $("cName").value = c.name;
+  $("cKind").value = c.kind || "tcp";
+  kindFields();
+  $("cHost").value = c.host || "127.0.0.1";
+  $("cPort").value = c.port || 502;
+  const s = c.serial || {};
+  ensureOption("cCom", s.port);
+  $("cCom").value = s.port || "";
+  ensureOption("cBaud", s.baud != null ? String(s.baud) : "9600");
+  $("cBaud").value = s.baud != null ? String(s.baud) : "9600";
+  $("cParity").value = s.parity || "N";
+  $("cData").value = s.data_bits != null ? String(s.data_bits) : "8";
+  $("cStop").value = s.stop_bits != null ? String(s.stop_bits) : "1";
+  $("cSlave").value = c.slave != null ? c.slave : 1;
+  $("cTimeout").value = c.timeout_ms || 1000;
+  $("detConn").open = true;
+  $("btnConnSubmit").textContent = "Сохранить соединение";
+  $("btnConnCancel").hidden = false;
+}
+
+function endConnEdit() {
+  editingConn = null;
+  $("btnConnSubmit").textContent = "Добавить соединение";
+  $("btnConnCancel").hidden = true;
+}
+
+function resetConnForm() {
+  $("cName").value = "Conn" + (cfg.connections.length + 1);
+  $("cKind").value = "tcp";
+  kindFields();
+  $("cSlave").value = 1;
+  $("cTimeout").value = 1000;
+}
+
+// Гарантирует наличие значения в select (напр. кастомный baud у импорта).
+function ensureOption(selId, val) {
+  if (val == null || val === "") return;
+  const sel = $(selId);
+  if (!sel) return;
+  if (![...sel.options].some((o) => o.value === String(val))) {
+    const o = document.createElement("option");
+    o.value = String(val);
+    o.textContent = String(val);
+    sel.appendChild(o);
+  }
+}
+
+// Показ/скрытие полей TCP/serial в зависимости от типа соединения.
+function kindFields() {
+  const k = $("cKind").value;
+  $("tcpFields").hidden = !(k === "tcp" || k === "rtu_over_tcp" || k === "ascii_over_tcp");
+  $("serFields").hidden = !(k === "rtu" || k === "ascii");
 }
 
 async function testConn() {
@@ -190,11 +250,21 @@ function render() {
   renderLog();
   fillSelectors();
   renderSchema();
-  // Guide the user to the next step: open the form they need.
+  // Старт/Стоп отражают фактическое состояние движка.
+  const running = !!(snap && snap.running);
+  $("btnStart").disabled = running;
+  $("btnStop").disabled = !running;
+  // Guide the user to the next step — once per config change, не мешая
+  // редактировать формы (раньше это срабатывало каждые 300 мс и закрывало
+  // форму соединения у пользователя из-под рук).
   const dc = $("detConn"), dp = $("detPoll");
   if (dc && dp) {
-    if (!cfg.connections.length) { dc.open = true; }
-    else if (!cfg.polls.length) { dp.open = true; dc.open = false; }
+    const key = cfg.connections.length + ":" + cfg.polls.length;
+    if (key !== guideKey) {
+      guideKey = key;
+      if (!cfg.connections.length) { dc.open = true; }
+      else if (!cfg.polls.length) { dp.open = true; if (!editingConn) dc.open = false; }
+    }
   }
 }
 
@@ -220,9 +290,14 @@ function renderConnList() {
   if (!cfg.connections.length) { box.innerHTML = `<div class="empty">добавьте соединение →</div>`; return; }
   cfg.connections.forEach((c, i) => {
     const el = document.createElement("div");
-    el.className = "item";
-    el.innerHTML = `<span class="grow"><b>${esc(c.name)}</b><br><span class="sub">${esc(describe(c))}</span></span>`;
-    el.appendChild(miniBtn("✕", () => { cfg.connections.splice(i, 1); apply(); }));
+    el.className = "item" + (editingConn === c ? " editing" : "");
+    el.innerHTML = `<span class="grow"><b>${esc(c.name)}</b> <span class="sub">${esc(describe(c))}</span></span>`;
+    el.appendChild(miniBtn("✎", () => editConn(c)));
+    el.appendChild(miniBtn("✕", () => {
+      if (editingConn === c) { endConnEdit(); resetConnForm(); }
+      cfg.connections.splice(i, 1);
+      apply();
+    }));
     box.appendChild(el);
   });
 }
@@ -233,10 +308,16 @@ function renderPollList() {
   if (!cfg.polls.length) { box.innerHTML = `<div class="empty">добавьте опрос →</div>`; return; }
   cfg.polls.forEach((p, i) => {
     const el = document.createElement("div");
-    el.className = "item";
-    el.innerHTML = `<span class="grow"><b>${esc(p.name)}</b> <span class="sub">${FUNC[p.func] || p.func} @${p.raw_start != null ? p.raw_start : p.start}×${p.qty} · slave ${p.slave} · ${FMTL[p.fmt] || p.fmt} · ${p.scan_ms}мс</span></span>`;
+    el.className = "item" + (editingPoll === p ? " editing" : "");
+    const bound = cfg.connections.some((c) => c.id === p.conn_id);
+    const slave = p.slave ? `slave ${p.slave}` : `slave из соединения`;
+    el.innerHTML = `<span class="grow"><b>${esc(p.name)}</b> <span class="sub">${FUNC[p.func] || p.func} @${p.raw_start != null ? p.raw_start : p.start}×${p.qty} · ${slave} · ${FMTL[p.fmt] || p.fmt} · ${p.scan_ms}мс${bound ? "" : ' · <span class="bad">нет соединения</span>'}</span></span>`;
     el.appendChild(miniBtn("✎", () => editPoll(p)));
-    el.appendChild(miniBtn("✕", () => { cfg.polls.splice(i, 1); apply(); }));
+    el.appendChild(miniBtn("✕", () => {
+      if (editingPoll === p) { endPollEdit(); }
+      cfg.polls.splice(i, 1);
+      apply();
+    }));
     box.appendChild(el);
   });
 }
@@ -254,7 +335,7 @@ function renderRuleList() {
   });
   cfg.rules.forEach((r, i) => {
     const el = document.createElement("div");
-    el.className = "item";
+    el.className = "item" + (editingRule === r ? " editing" : "");
     const sw = document.createElement("span");
     sw.style.cssText = `width:13px;height:13px;border-radius:3px;border:1px solid #334155;background:${r.bg || "transparent"}`;
     el.appendChild(sw);
@@ -262,9 +343,50 @@ function renderRuleList() {
     const addr = poll ? (poll.start || 0) + r.offset * stepOf(poll.fmt) : r.offset;
     const name = poll ? regLabel(poll, addr) : `poll ${r.poll}`;
     el.insertAdjacentHTML("beforeend", `<span class="grow"><b>№${r._ord}/32 ${esc(name)}</b> <span class="sub">${condText(r.cond)}${r.text ? " · ⌨" + esc(r.text) : ""}${r.severity ? " · ⚠" + r.severity : ""}${r.blink ? " · мигает" : ""}</span></span>`);
-    el.appendChild(miniBtn("✕", () => { cfg.rules.splice(i, 1); apply(); }));
+    el.appendChild(miniBtn("✎", () => editRule(r)));
+    el.appendChild(miniBtn("✕", () => {
+      if (editingRule === r) endRuleEdit();
+      cfg.rules.splice(i, 1);
+      apply();
+    }));
     box.appendChild(el);
   });
+}
+
+function editRule(r) {
+  editingRule = r;
+  const poll = findCfgPoll(r.poll);
+  const addr = poll ? (poll.start || 0) + r.offset * stepOf(poll.fmt) : r.offset;
+  $("rReg").value = `${r.poll}:${addr}`;
+  const c = r.cond || {};
+  const kind = c.kind || "gt";
+  $("rKind").value = kind;
+  if (kind === "in_range" || kind === "outside_range") {
+    $("rValue").value = c.lo;
+    $("rValue2").value = c.hi;
+  } else if (kind === "bit") {
+    $("rValue").value = 0;
+    $("rValue2").value = c.n;
+  } else {
+    $("rValue").value = c.v;
+    $("rValue2").value = 0;
+  }
+  $("rFg").value = r.fg || "#ffffff";
+  $("rBg").value = r.bg || "#ef4444";
+  $("rSeverity").value = r.severity || "";
+  $("rMessage").value = r.message || r.name || "";
+  $("rText").value = r.text || "";
+  $("rBlink").checked = !!r.blink;
+  $("btnRuleSubmit").textContent = "Сохранить ветку";
+  $("btnRuleCancel").hidden = false;
+  const det = $("btnRuleSubmit").closest("details");
+  if (det) det.open = true;
+}
+
+function endRuleEdit() {
+  editingRule = null;
+  $("btnRuleSubmit").textContent = "Добавить ветку";
+  $("btnRuleCancel").hidden = true;
 }
 
 function renderGrid() {
@@ -279,8 +401,10 @@ function renderGrid() {
     card.className = "card";
     const head = document.createElement("div");
     head.className = "card-head";
+    const cn = cfg.connections.find((c) => c.id === p.conn_id);
+    const connTxt = cn ? esc(cn.name) : '<span class="bad">нет соединения</span>';
     head.innerHTML = `<h2>${esc(p.name)}</h2>
-      <span class="meta">${FUNC[p.func] || p.func} · addr ${p.start} · qty ${p.qty} · slave ${p.slave} · ${p.scan_ms}мс · ${FMTL[p.fmt] || p.fmt}</span>
+      <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · slave ${p.slave} · ${p.scan_ms}мс · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
       <span class="stat">${p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " мс" : ""}</span>`;
     card.appendChild(head);
 
@@ -396,7 +520,13 @@ function editPoll(p) {
   $("pUnit").value = p.unit || "";
   $("pBase").checked = !!p.base_one;
   $("detPoll").open = true;
-  document.querySelector("#pollForm button.primary").textContent = "Сохранить опрос";
+  $("btnPollSubmit").textContent = "Сохранить опрос";
+  $("btnPollCancel").hidden = false;
+}
+function endPollEdit() {
+  editingPoll = null;
+  $("btnPollSubmit").textContent = "Добавить опрос";
+  $("btnPollCancel").hidden = true;
 }
 function regLabel(p, addr) {
   return (p.labels && p.labels[String(addr)]) || `${p.name}[${addr}]`;
@@ -537,15 +667,21 @@ async function importFolder() {
 async function doImport(paths) {
   const res = await invoke("import_paths", { paths });
 
-  const stamp = Date.now();
+  // Соединения из файлов НЕ подхватываются: опросы привязываются к
+  // соединениям, созданным пользователем. Сначала ищем совпадение по
+  // host:port, иначе — первое существующее соединение, иначе — пусто
+  // (опрос остаётся без связи, помечаем его в списке).
   const idMap = {};
-  (res.connections || []).forEach((c, i) => {
-    const old = c.id;
-    c.id = "imp" + stamp + "_" + i;
-    idMap[old] = c.id;
-    cfg.connections.push(c);
+  (res.connections || []).forEach((c) => {
+    const same = cfg.connections.find(
+      (u) => (u.host || "") === (c.host || "") && (u.port || 0) === (c.port || 0)
+    );
+    idMap[c.id] = same ? same.id : (cfg.connections[0] ? cfg.connections[0].id : "");
   });
-  res.polls.forEach((p) => { p.conn_id = idMap[p.conn_id] || p.conn_id; });
+  res.polls.forEach((p) => {
+    if (idMap[p.conn_id] !== undefined) p.conn_id = idMap[p.conn_id];
+    else if (cfg.connections.length) p.conn_id = cfg.connections[0].id;
+  });
 
   let nid = cfg.polls.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
   res.polls.forEach((p) => { p.id = nid++; });
@@ -554,7 +690,10 @@ async function doImport(paths) {
   await apply();
   const ok = res.reports.filter((r) => r.ok).length;
   const bad = res.reports.filter((r) => !r.ok);
-  footer(`Импорт: ${res.reports.length} записей — ок ${ok}, ошибок ${bad.length}; +${res.polls.length} опросов, +${(res.connections || []).length} соединений`);
+  const unbound = res.polls.filter((p) => !p.conn_id).length;
+  let msg = `Импорт: ${res.reports.length} записей — ок ${ok}, ошибок ${bad.length}; +${res.polls.length} опросов → ваши соединения (из файлов не добавляются)`;
+  if (unbound) msg += `; без соединения: ${unbound} — добавьте соединение и привяжите опрос (✎)`;
+  footer(msg, unbound > 0);
   if (bad.length) console.warn("не импортировано:", bad);
   console.log("import reports", res.reports);
 }
@@ -589,17 +728,32 @@ function wireForms() {
   const addBtn = $("wAdd");
   if (addBtn) addBtn.onclick = addWidget;
 
-  $("cKind").onchange = () => {
-    const k = $("cKind").value;
-    $("tcpFields").hidden = !(k === "tcp" || k === "rtu_over_tcp");
-    $("serFields").hidden = !(k === "rtu");
+  $("cKind").onchange = kindFields;
+
+  $("btnConnCancel").onclick = () => { endConnEdit(); resetConnForm(); };
+  $("btnPollCancel").onclick = () => { endPollEdit(); };
+  $("btnRuleCancel").onclick = () => { endRuleEdit(); };
+
+  // Смена соединения в форме опроса — Slave ID подтягивается из соединения
+  // (можно переопределить вручную).
+  $("pConn").onchange = () => {
+    const c = cfg.connections.find((x) => x.id === $("pConn").value);
+    if (c && c.slave != null) $("pSlave").value = c.slave;
   };
 
   $("connForm").onsubmit = (e) => {
     e.preventDefault();
     const c = connFromForm();
     c.name = $("cName").value || c.name;
-    cfg.connections.push(c);
+    if (editingConn) {
+      // id не меняем — на него ссылаются опросы.
+      c.id = editingConn.id;
+      Object.assign(editingConn, c);
+      endConnEdit();
+      resetConnForm();
+    } else {
+      cfg.connections.push(c);
+    }
     apply();
   };
 
@@ -624,8 +778,7 @@ function wireForms() {
     };
     if (editingPoll) {
       Object.assign(editingPoll, vals);
-      editingPoll = null;
-      document.querySelector("#pollForm button.primary").textContent = "Добавить опрос";
+      endPollEdit();
     } else {
       cfg.polls.push(Object.assign({ id: Date.now() % 100000, enabled: true, labels: {}, alarms: {} }, vals));
     }
@@ -644,19 +797,27 @@ function wireForms() {
     if (kind === "in_range" || kind === "outside_range") cond = { kind, lo: v, hi: Number($("rValue2").value) };
     else if (kind === "bit") cond = { kind, n: Number($("rValue2").value), set: true };
     else cond = { kind, v };
-    // Up to 32 value-dependent branches per register (Modbus Poll allows 2
-    // colour rules per window; we extend this to 32 branches per row).
-    const used = cfg.rules.filter((r) => r.poll === pid && r.offset === offset).length;
-    if (used >= 32) { footer("у регистра уже 32 ветки — предел", true); return; }
     const sev = $("rSeverity").value;
     const t = $("rText").value.trim();
-    cfg.rules.push({
-      id: Date.now() % 100000, name: $("rMessage").value || kind,
+    const item = {
+      name: $("rMessage").value || kind,
       poll: pid, offset,
       cond, fg: $("rFg").value, bg: $("rBg").value, blink: $("rBlink").checked,
       severity: sev || null, message: $("rMessage").value || null,
       text: t || null,
-    });
+    };
+    if (editingRule) {
+      // Правку ветки можно перенести и на другой регистр — просто берём
+      // значения из формы; id и порядок сохраняются.
+      Object.assign(editingRule, item);
+      endRuleEdit();
+    } else {
+      // Up to 32 value-dependent branches per register (Modbus Poll allows 2
+      // colour rules per window; we extend this to 32 branches per row).
+      const used = cfg.rules.filter((r) => r.poll === pid && r.offset === offset).length;
+      if (used >= 32) { footer("у регистра уже 32 ветки — предел", true); return; }
+      cfg.rules.push(Object.assign({ id: Date.now() % 100000 }, item));
+    }
     apply();
   };
 }
@@ -680,10 +841,14 @@ function synthRows(cp) {
   return out;
 }
 
-function describe(c) {  if (c.kind === "tcp") return "TCP " + c.host + ":" + c.port;
-  if (c.kind === "rtu_over_tcp") return "RTU/TCP " + c.host + ":" + c.port;
-  if (c.kind === "rtu") return `Serial ${c.serial.port} ${c.serial.baud} ${c.serial.parity}${c.serial.data_bits}${c.serial.stop_bits}`;
-  return KINDL[c.kind] || c.kind;
+function describe(c) {
+  const sl = ` slave ${c.slave != null ? c.slave : 1}`;
+  if (c.kind === "tcp") return "TCP " + c.host + ":" + c.port + sl;
+  if (c.kind === "rtu_over_tcp") return "RTU/TCP " + c.host + ":" + c.port + sl;
+  if (c.kind === "ascii_over_tcp") return "ASCII/TCP " + c.host + ":" + c.port + sl;
+  if (c.kind === "rtu") return `Serial ${c.serial.port} ${c.serial.baud} ${c.serial.parity}${c.serial.data_bits}${c.serial.stop_bits}${sl}`;
+  if (c.kind === "ascii") return `ASCII ${c.serial.port}${sl}`;
+  return (KINDL[c.kind] || c.kind) + sl;
 }
 function condText(c) {
   switch (c.kind) {

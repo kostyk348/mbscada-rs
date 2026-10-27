@@ -46,6 +46,10 @@ fn def_timeout() -> u32 {
     1000
 }
 
+fn def_slave() -> u8 {
+    1
+}
+
 /// One transport target (a "connection" in Modbus Poll).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
@@ -60,11 +64,16 @@ pub struct Connection {
     pub serial: SerialCfg,
     #[serde(default = "def_timeout")]
     pub timeout_ms: u32,
+    /// Default Modbus slave (unit) address for polls on this connection.
+    /// Polls may override it with their own `slave`; a poll with `slave = 0`
+    /// inherits this value.
+    #[serde(default = "def_slave")]
+    pub slave: u8,
 }
 
 impl Connection {
     pub fn describe(&self) -> String {
-        match self.kind {
+        let base = match self.kind {
             ConnKind::Tcp => format!("TCP {}:{}", self.host, self.port),
             ConnKind::RtuOverTcp => format!("RTU/TCP {}:{}", self.host, self.port),
             ConnKind::AsciiOverTcp => format!("ASCII/TCP {}:{}", self.host, self.port),
@@ -77,7 +86,8 @@ impl Connection {
                 self.serial.stop_bits
             ),
             ConnKind::Ascii => format!("ASCII {}", self.serial.port),
-        }
+        };
+        format!("{base} · slave {}", self.slave)
     }
 }
 
@@ -244,4 +254,42 @@ impl Poll {
 
 pub fn func_is_read(func: u8) -> bool {
     matches!(func, 1 | 2 | 3 | 4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_slave_defaults_to_one_for_old_configs() {
+        // Project JSON saved before the `slave` field existed must still load.
+        let c: Connection = serde_json::from_str(
+            r#"{"id":"c1","name":"C","kind":"tcp","host":"127.0.0.1","port":502}"#,
+        )
+        .unwrap();
+        assert_eq!(c.slave, 1);
+        assert_eq!(c.describe(), "TCP 127.0.0.1:502 · slave 1");
+    }
+
+    #[test]
+    fn connection_slave_roundtrips_and_describe() {
+        let c: Connection = serde_json::from_str(
+            r#"{"id":"c1","name":"C","kind":"rtu_over_tcp","host":"10.0.0.5","port":502,"slave":7}"#,
+        )
+        .unwrap();
+        assert_eq!(c.slave, 7);
+        assert_eq!(c.describe(), "RTU/TCP 10.0.0.5:502 · slave 7");
+        let back: Connection =
+            serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.slave, 7);
+    }
+
+    #[test]
+    fn connection_serial_describe_includes_slave() {
+        let c: Connection = serde_json::from_str(
+            r#"{"id":"c2","name":"S","kind":"rtu","serial":{"port":"COM3","baud":115200,"data_bits":8,"parity":"N","stop_bits":1},"slave":3}"#,
+        )
+        .unwrap();
+        assert_eq!(c.describe(), "Serial COM3 115200 N81 · slave 3");
+    }
 }

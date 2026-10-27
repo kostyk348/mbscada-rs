@@ -138,7 +138,7 @@ pub fn table_to_poll(t: &Table, conn_id: &str, poll_id: u32) -> Poll {
     }
 }
 
-fn conn(id: String, name: String, host: String, port: u16) -> Connection {
+fn conn(id: String, name: String, host: String, port: u16, slave: u8) -> Connection {
     Connection {
         id,
         name,
@@ -147,6 +147,7 @@ fn conn(id: String, name: String, host: String, port: u16) -> Connection {
         port,
         serial: SerialCfg::default(),
         timeout_ms: 1000,
+        slave: if slave == 0 { 1 } else { slave },
     }
 }
 
@@ -186,7 +187,7 @@ pub fn import_paths(paths: Vec<String>) -> ImportResult {
                     format!("{} таблиц · {}:{}", ws.tables.len(), ws.host, ws.port),
                     None,
                 ));
-                connections.push(conn(cid.clone(), name, ws.host.clone(), ws.port));
+                connections.push(conn(cid.clone(), name, ws.host.clone(), ws.port, 1));
                 for t in &ws.tables {
                     if !t.exists {
                         reports.push(report_from(
@@ -252,6 +253,7 @@ pub fn import_paths(paths: Vec<String>) -> ImportResult {
                         "Импорт (по умолчанию)".into(),
                         "127.0.0.1".into(),
                         502,
+                        1,
                     ));
                     default_cid = Some(cid);
                 }
