@@ -1,0 +1,211 @@
+// mbSCADA i18n: tiny RU/EN dictionary + DOM applier.
+// Static HTML uses data-i (text), data-ip (placeholder), data-it (title).
+// Dynamic strings in main.js use t("key"). Language persists in localStorage.
+(function () {
+  const D = {
+    ru: {
+      // topbar
+      imp_files: "Импорт файлов…", imp_folder: "Импорт папки…",
+      start: "▶ Старт", stop: "■ Стоп", save: "Сохранить", load: "Открыть",
+      addr_raw: "адреса: как в файле", addr_4x: "как 4x0000", addr_4xxxx: "как 40001+", addr_base1: "адреса с 1",
+      lang_title: "язык интерфейса",
+      // panels
+      p_conns: "Соединения", p_polls: "Опросы / адреса",
+      p_rules: "Правила (цвет / авария на регистр)",
+      p_alarms: "Аварии", p_stats: "Статистика", p_log: "Журнал обмена",
+      tab_tables: "Таблицы", tab_schema: "Схема (SCADA)",
+      al_active: "Активные", al_hist: "История",
+      al_ack_all: "Квитировать все", al_clear: "Очистить историю",
+      al_ack_all_title: "квитировать все активные аварии", al_clear_title: "очистить историю аварий",
+      al_sound_title: "звук при появлении новой аварии",
+      // connection form
+      f_name: "Имя", f_kind: "Тип", f_ip: "IP", f_port: "Порт", f_com: "COM",
+      f_baud: "Скорость", f_parity: "Чётность", f_data: "Биты данных", f_stop: "Стоп-биты",
+      f_slave: "Slave ID", f_timeout: "Таймаут, мс",
+      b_ports: "⟳ Порты", b_test: "Проверить связь", b_cancel: "Отмена",
+      b_add_conn: "Добавить соединение",
+      edit_conn: "Сохранить соединение", edit_poll: "Сохранить опрос", edit_rule: "Сохранить ветку",
+      conns_none: "соединений нет",
+      conn_hint: "Slave ID здесь — адрес устройства по умолчанию; в каждом опросе можно задать свой.",
+      conn_add_title: "импорт .mbp / .mbw файлов Modbus Poll",
+      conn_folder_title: "импорт всех .mbp / .mbw из папки",
+      start_title: "запустить опрос", stop_title: "остановить опрос",
+      csv_title: "лог значений в CSV (пишутся только изменившиеся строки)",
+      save_title: "сохранить проект (соединения, опросы, правила, схема)",
+      load_title: "открыть проект mbSCADA",
+      addrmode_title: "Как показывать/опрашивать адреса",
+      ports_title: "обновить список COM-портов",
+      // poll form
+      f_conn: "Соединение", f_func: "Функция", f_addr: "Адрес", f_qty: "Кол-во",
+      f_period: "Период, мс", f_fmt: "Формат", f_unit: "Ед.",
+      f_base1: "адреса с 1", b_add_poll: "Добавить опрос",
+      poll_add_title: "+ Опрос (свои адреса)",
+      // rule form
+      f_reg: "Регистр", f_cond: "Условие", f_value: "Значение",
+      f_and: "И (диапазон / № бита)", f_fg: "Текст", f_bg: "Фон", f_level: "Уровень",
+      sev_color: "только цвет", f_label: "Подпись",
+      f_dyntext: "Меняющийся текст строки", f_blink: "мигать",
+      b_add_rule: "Добавить ветку", rule_add_title: "+ Правило на регистр",
+      c_gt: "значение >", c_ge: "значение ≥", c_lt: "значение <", c_le: "значение ≤",
+      c_eq: "значение =", c_ne: "значение ≠", c_in: "в диапазоне", c_out: "вне диапазона",
+      c_bit: "бит установлен",
+      rules_hint: "Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, до 32 веток на регистр. ✎ в списке — правка ветки.",
+      rule_msg_ph: "напр. Перегрев T1", rule_text_ph: "замещает имя строки при срабатывании",
+      // schema
+      w_lamp: "Лампа", w_value: "Значение", w_bar: "Полоса", w_gauge: "Гейдж",
+      w_button: "Кнопка (запись)", w_text: "Текст",
+      b_add_w: "Добавить элемент",
+      schema_hint: "перетаскивай мышью · двойной клик — настройка · ✕ удалить",
+      // modals
+      m_write: "Записать", m_save: "Сохранить",
+      m_widget: "Настройка элемента",
+      // footer / misc
+      footer_empty: "нет соединений — добавьте соединение (TCP или COM) и опрос со своими адресами",
+      ms: "мс",
+      // lists
+      add_conn_first: "добавьте соединение →", add_poll_first: "добавьте опрос →",
+      no_rules: "правил нет", no_conn: "нет соединения",
+      slave_from_conn: "slave из соединения", no_data: "нет данных",
+      grid_empty: "Добавьте соединение и опрос слева — таблица появится здесь, затем «Старт».",
+      blinking: "мигает",
+      err_timeouts: "ошибки / таймауты", resp: "отклик (тек/сред), мс",
+      // alarms
+      al_none: "активных аварий нет", al_hist_empty: "история пуста",
+      al_ack: "квит.", al_bad_conn: "нет связи",
+      al_jump_hint: "клик — перейти к строке в таблице",
+      al_acked: "✓",
+      // csv
+      csv_only_tauri: "CSV-лог — только в Tauri-сборке", csv_stopped: "CSV-лог остановлен",
+      csv_dialog: "Куда писать CSV-лог", csv_cancelled: "csv-лог отменён",
+      csv_running: "CSV-лог пишется: ",
+      // dialogs / actions
+      no_tauri: "⚠ Tauri IPC недоступен (window.__TAURI__ не найден) — кнопки не работают",
+      err_prefix: "ошибка: ",
+      test_only_app: "проверка доступна только в приложении",
+      write_only_app: "запись доступна только в приложении",
+      save_dialog: "Сохранить проект", save_cancelled: "сохранение отменено", saved: "сохранено: ",
+      open_dialog: "Открыть проект", open_cancelled: "открытие отменено", loaded: "загружено: ",
+      pick_files: "Выберите файлы Modbus Poll", pick_folder: "Выберите папку с .mbp / .mbw",
+      import_cancelled: "импорт отменён", csv_cancelled2: "csv-лог отменён",
+      pick_reg_first: "выберите регистр — сначала добавьте опрос",
+      limit32: "у регистра уже 32 ветки — предел",
+      no_widgets: "нет регистров — сначала добавьте опрос",
+      // widget modal fields
+      w_label: "Подпись", w_min: "Минимум", w_max: "Максимум", w_unit: "Единицы",
+      w_onval: "Значение «вкл»", w_offval: "Значение «выкл»", w_btnlabel: "Надпись",
+      write_title: "Запись {func} @ {addr}\n{name}\nтекущее: {cur}",
+      imp_summary: "Импорт: {n} записей — ок {ok}, ошибок {bad}; +{p} опросов → ваши соединения (из файлов не добавляются)",
+      imp_unbound: "; без соединения: {n} — добавьте соединение и привяжите опрос (✎)",
+      dur_h: "ч", dur_m: "м", dur_s: "с",
+      row_write_hint: "клик — записать значение",
+      wrote: "схема: записано @{addr} = {v}",
+      th_addr: "Адрес", th_name: "Имя", th_value: "Значение", th_trend: "Тренд",
+      th_unit: "Ед.", th_quality: "Кач.", th_alarm: "Авария",
+    },
+    en: {
+      imp_files: "Import files…", imp_folder: "Import folder…",
+      start: "▶ Start", stop: "■ Stop", save: "Save", load: "Open",
+      addr_raw: "addresses: as in file", addr_4x: "as 4x0000", addr_4xxxx: "as 40001+", addr_base1: "addresses from 1",
+      lang_title: "UI language",
+      p_conns: "Connections", p_polls: "Polls / addresses",
+      p_rules: "Rules (color / alarm per register)",
+      p_alarms: "Alarms", p_stats: "Stats", p_log: "Traffic log",
+      tab_tables: "Tables", tab_schema: "Mimic (SCADA)",
+      al_active: "Active", al_hist: "History",
+      al_ack_all: "Ack all", al_clear: "Clear history",
+      al_ack_all_title: "acknowledge all active alarms", al_clear_title: "clear the alarm history",
+      al_sound_title: "beep when a new alarm appears",
+      f_name: "Name", f_kind: "Type", f_ip: "IP", f_port: "Port", f_com: "COM",
+      f_baud: "Baud", f_parity: "Parity", f_data: "Data bits", f_stop: "Stop bits",
+      f_slave: "Slave ID", f_timeout: "Timeout, ms",
+      b_ports: "⟳ Ports", b_test: "Test connection", b_cancel: "Cancel",
+      b_add_conn: "Add connection",
+      edit_conn: "Save connection", edit_poll: "Save poll", edit_rule: "Save branch",
+      conns_none: "no connections",
+      conn_hint: "Slave ID here is the default device address; each poll can override it with its own.",
+      conn_add_title: "import Modbus Poll .mbp / .mbw files",
+      conn_folder_title: "import all .mbp / .mbw from a folder",
+      start_title: "start polling", stop_title: "stop polling",
+      csv_title: "CSV value log (only changed rows are written)",
+      save_title: "save the project (connections, polls, rules, mimic)",
+      load_title: "open an mbSCADA project",
+      addrmode_title: "How to show/poll addresses",
+      ports_title: "refresh the COM port list",
+      f_conn: "Connection", f_func: "Function", f_addr: "Address", f_qty: "Count",
+      f_period: "Period, ms", f_fmt: "Format", f_unit: "Unit",
+      f_base1: "1-based addresses", b_add_poll: "Add poll",
+      poll_add_title: "+ Poll (own addresses)",
+      f_reg: "Register", f_cond: "Condition", f_value: "Value",
+      f_and: "AND (range / bit no.)", f_fg: "Text", f_bg: "Fill", f_level: "Level",
+      sev_color: "color only", f_label: "Caption",
+      f_dyntext: "Dynamic row text", f_blink: "blink",
+      b_add_rule: "Add branch", rule_add_title: "+ Rule per register",
+      c_gt: "value >", c_ge: "value ≥", c_lt: "value <", c_le: "value ≤",
+      c_eq: "value =", c_ne: "value ≠", c_in: "in range", c_out: "outside range",
+      c_bit: "bit set",
+      rules_hint: "Branches fire in order: the first match sets the color/text — like “rule 1 over rule 2” in Modbus Poll, up to 32 branches per register. ✎ in the list edits a branch.",
+      rule_msg_ph: "e.g. T1 overheat", rule_text_ph: "replaces the row name when it fires",
+      w_lamp: "Lamp", w_value: "Value", w_bar: "Bar", w_gauge: "Gauge",
+      w_button: "Button (write)", w_text: "Text",
+      b_add_w: "Add widget",
+      schema_hint: "drag with the mouse · double-click to configure · ✕ delete",
+      m_write: "Write", m_save: "Save",
+      m_widget: "Widget settings",
+      footer_empty: "no connections — add a connection (TCP or COM) and a poll with your addresses",
+      ms: "ms",
+      add_conn_first: "add a connection →", add_poll_first: "add a poll →",
+      no_rules: "no rules", no_conn: "no connection",
+      slave_from_conn: "slave from connection", no_data: "no data",
+      grid_empty: "Add a connection and a poll on the left — the table appears here, then press Start.",
+      blinking: "blinks",
+      err_timeouts: "errors / timeouts", resp: "response (last/avg), ms",
+      al_none: "no active alarms", al_hist_empty: "history is empty",
+      al_ack: "ack", al_bad_conn: "no link",
+      al_jump_hint: "click to jump to the table row",
+      al_acked: "✓",
+      csv_only_tauri: "CSV log — Tauri build only", csv_stopped: "CSV log stopped",
+      csv_dialog: "Where to write the CSV log", csv_cancelled: "csv log cancelled",
+      csv_running: "CSV log writing: ",
+      no_tauri: "⚠ Tauri IPC unavailable (window.__TAURI__ not found) — buttons won't work",
+      err_prefix: "error: ",
+      test_only_app: "testing is available in the app only",
+      write_only_app: "writing is available in the app only",
+      save_dialog: "Save project", save_cancelled: "save cancelled", saved: "saved: ",
+      open_dialog: "Open project", open_cancelled: "open cancelled", loaded: "loaded: ",
+      pick_files: "Select Modbus Poll files", pick_folder: "Select a folder with .mbp / .mbw",
+      import_cancelled: "import cancelled", csv_cancelled2: "csv log cancelled",
+      pick_reg_first: "pick a register — add a poll first",
+      limit32: "the register already has 32 branches — limit",
+      no_widgets: "no registers — add a poll first",
+      w_label: "Label", w_min: "Minimum", w_max: "Maximum", w_unit: "Units",
+      w_onval: "“on” value", w_offval: "“off” value", w_btnlabel: "Caption",
+      write_title: "Write {func} @ {addr}\n{name}\ncurrent: {cur}",
+      imp_summary: "Import: {n} files — ok {ok}, {bad} failed; +{p} polls → your connections (none added from the files)",
+      imp_unbound: "; unbound: {n} — add a connection and bind the poll (✎)",
+      dur_h: "h", dur_m: "m", dur_s: "s",
+      row_write_hint: "click to write a value",
+      wrote: "mimic: wrote @{addr} = {v}",
+      th_addr: "Address", th_name: "Name", th_value: "Value", th_trend: "Trend",
+      th_unit: "Unit", th_quality: "Qual.", th_alarm: "Alarm",
+    },
+  };
+
+  window.i18nLang = function () {
+    if (window.LANG === "ru" || window.LANG === "en") return window.LANG;
+    const saved = localStorage.getItem("mbscada.lang");
+    if (saved === "ru" || saved === "en") return saved;
+    return (navigator.language || "ru").toLowerCase().startsWith("ru") ? "ru" : "en";
+  };
+
+  window.t = function (key) {
+    const lang = window.i18nLang();
+    return (D[lang] && D[lang][key]) || D.ru[key] || key;
+  };
+
+  window.applyLangStatic = function () {
+    document.querySelectorAll("[data-i]").forEach((el) => { el.textContent = t(el.dataset.i); });
+    document.querySelectorAll("[data-ip]").forEach((el) => { el.placeholder = t(el.dataset.ip); });
+    document.querySelectorAll("[data-it]").forEach((el) => { el.title = t(el.dataset.it); });
+    document.documentElement.lang = window.i18nLang();
+  };
+})();
