@@ -102,6 +102,8 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 
 <img src="docs/img/slave-en.png" alt="In-app slave simulator: port, framing, editable register grid with typed view and auto-generation" width="60%">
 
+> 📖 **Full simulator guide (RU)**: [`docs/guide-slave-ru.md`](docs/guide-slave-ru.md) — quick start, connecting masters, data types, dec/hex/bin display, recipes and troubleshooting. An English version is planned.
+
 - **Both sides of the wire in one app.** The new *Slave simulator* tab serves coils / discrete / holding / input registers over Modbus TCP or RTU-over-TCP — point any master at `localhost:10502`, or poll it with mbSCADA itself.
 - **Live register grid** with a typed view (u16 / i16 / hex / u32 / i32 / float CDAB·ABCD): edit a cell and the slave’s data model changes immediately; checkboxes for bit areas; the raw register bits are shown next to the typed value.
 - **Auto-generation** (sine / ramp / noise with amplitude, base and period) animates the selected range, so alarm rules, trends and mimics have something realistic to chew on.
