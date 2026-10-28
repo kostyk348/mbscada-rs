@@ -55,7 +55,7 @@
 
 </details>
 
-## ⬇ Скачать v1.4.1
+## ⬇ Скачать v1.4.2
 
 Готовые установщики под все платформы — тулчейн не нужен.
 Забирайте из [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):

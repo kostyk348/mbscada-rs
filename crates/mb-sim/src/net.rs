@@ -322,7 +322,30 @@ fn open_serial(p: &SerialParams) -> std::io::Result<Box<dyn serialport::SerialPo
         .stop_bits(stop_bits_of(p.stop_bits))
         .timeout(Duration::from_millis(20))
         .open()
-        .map_err(|e| std::io::Error::other(format!("open {}: {e}", p.port)))
+        .map_err(|e| std::io::Error::other(serial_open_error(&e, &p.port)))
+}
+
+/// Human-readable serial open failure (port busy / missing / wrong params).
+/// Same shape as mb-engine's `serial_open_error` — the app shows this text
+/// verbatim in the slave panel footer.
+fn serial_open_error(e: &serialport::Error, port: &str) -> String {
+    let hint = match &e.kind {
+        serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
+            "порт занят другой программой — закройте её и нажмите ⟳ Обновить"
+        }
+        serialport::ErrorKind::NoDevice
+        | serialport::ErrorKind::Io(std::io::ErrorKind::NotFound) => {
+            "порт не найден — подключите адаптер и нажмите ⟳ Обновить"
+        }
+        serialport::ErrorKind::InvalidInput => "неверные параметры линии для этого порта",
+        _ => "",
+    };
+    let base = format!("COM-порт {port} открыть не удалось: {e}");
+    if hint.is_empty() {
+        base
+    } else {
+        format!("{base} ({hint})")
+    }
 }
 
 /// Serve Modbus RTU on a physical serial port (USB-RS485 / COM / ttyUSB).
@@ -357,6 +380,8 @@ fn serial_loop(
     let mut buf: Vec<u8> = Vec::new();
     let mut tmp = [0u8; 512];
     let mut first_byte: Option<Instant> = None;
+    // Last response we wrote; on 2-wire RS-485 the adapter may hear it back.
+    let mut last_tx: Vec<u8> = Vec::new();
     while !stop.load(Ordering::Relaxed) {
         match port.read(&mut tmp) {
             Ok(0) => {}
@@ -383,6 +408,8 @@ fn serial_loop(
                 _ => {}
             }
         }
+        // Drop an echo of our own response before parsing (see strip_own_echo).
+        strip_own_echo(&mut buf, &last_tx);
         let mut replies: Vec<Vec<u8>> = Vec::new();
         {
             let mut s = match sim.lock() {
@@ -399,7 +426,19 @@ fn serial_loop(
                 break;
             }
             let _ = port.flush();
+            last_tx = out;
         }
+    }
+}
+
+/// Drop a leading echo of our own last response (2-wire RS-485 adapters may
+/// loop TX back to RX, so the slave hears the reply it just wrote). The echo
+/// is byte-identical to what we sent, hence the exact prefix match; at most
+/// one copy is removed so a real request that happens to look like the reply
+/// is never eaten. Anything else goes through the CRC resync as before.
+fn strip_own_echo(buf: &mut Vec<u8>, last_tx: &[u8]) {
+    if !last_tx.is_empty() && buf.starts_with(last_tx) {
+        buf.drain(..last_tx.len());
     }
 }
 
@@ -439,7 +478,6 @@ fn process_serial_buf(sim: &mut Sim, buf: &mut Vec<u8>, replies: &mut Vec<Vec<u8
 mod tests {
     use super::*;
     use mb_proto::pdu::{decode_response, Request, Response};
-    use std::io::Write as _;
 
     #[test]
     fn tcp_roundtrip_clients_and_stop() {
@@ -557,6 +595,27 @@ mod tests {
         process_serial_buf(&mut sim, &mut buf, &mut replies);
         assert_eq!(replies.len(), 2, "both frames served from one read");
         assert_eq!((sim.holding[0], sim.holding[1]), (10, 20));
+    }
+
+    #[test]
+    fn serial_buf_strips_own_response_echo() {
+        // 2-wire RS-485: the slave hears its own reply, then the next request.
+        let mut sim = Sim::new(1);
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 }.encode();
+        let reply = rtu::encode(1, &sim.handle_pdu(&req));
+        let next = rtu::encode(
+            1,
+            &Request::WriteSingleRegister { addr: 2, value: 9 }.encode(),
+        );
+        let mut buf = reply.clone();
+        buf.extend_from_slice(&next);
+        strip_own_echo(&mut buf, &reply);
+        assert_eq!(buf, next, "echo removed, the following request intact");
+
+        // A request that is NOT the echo must pass untouched.
+        let mut buf = next.clone();
+        strip_own_echo(&mut buf, &reply);
+        assert_eq!(buf, next);
     }
 
     #[test]

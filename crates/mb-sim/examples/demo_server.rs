@@ -14,7 +14,7 @@ fn main() {
     for (i, v) in seed.iter().enumerate() {
         sim.holding[i] = *v;
     }
-    let server = mb_sim::net::serve(sim, &format!("127.0.0.1:{port}")).expect("bind");
+    let _server = mb_sim::net::serve(sim, &format!("127.0.0.1:{port}")).expect("bind");
     println!("demo slave on 127.0.0.1:{port} (Ctrl+C to stop)");
     loop {
         std::thread::park();
