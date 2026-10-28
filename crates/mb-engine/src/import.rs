@@ -115,7 +115,12 @@ pub fn table_to_poll(t: &Table, conn_id: &str, poll_id: u32) -> Poll {
         id: poll_id,
         name: t.name.clone(),
         conn_id: conn_id.to_string(),
-        slave: if t.slave == 0 { 1 } else { t.slave },
+        // Keep the file's slave as-is (v1.4.3 fix): 0 means "follow the
+        // connection's Slave ID" in this app — rewriting 0 to 1 here made
+        // every imported poll snap to unit 1 even when the user's connection
+        // pointed elsewhere. The UI additionally normalizes imported polls
+        // to follow the user's connection (see doImport in ui/main.js).
+        slave: t.slave,
         func,
         start: t.raw_addr as u16,
         raw_start: t.raw_addr,
@@ -292,6 +297,10 @@ mod tests {
     use super::*;
 
     fn write_table(dir: &Path, name: &str, start: u16) {
+        write_table_slave(dir, name, start, 3);
+    }
+
+    fn write_table_slave(dir: &Path, name: &str, start: u16, slave: u8) {
         let mut rows = Vec::new();
         for i in 0..4u32 {
             rows.push(mb_format::Row {
@@ -308,7 +317,7 @@ mod tests {
             raw_addr: start as u32,
             qty: 4,
             period_ms: 1000,
-            slave: 3,
+            slave,
             fmt16: 1,
             notation: "dec".into(),
             ip: String::new(),
@@ -374,6 +383,28 @@ mod tests {
         let shared = res.polls.iter().find(|p| p.name == "shared").unwrap();
         let wsconn = res.connections.iter().find(|c| c.host == "10.9.8.7").unwrap();
         assert_eq!(shared.conn_id, wsconn.id, "workspace table uses workspace conn");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_preserves_file_slave_address() {
+        // v1.4.3 regression: import used to force slave 0 -> 1 at the poll
+        // conversion layer. The file's device address must reach the poll
+        // verbatim. (The .mbp container itself stores 1..=247 — 0 is a UI-level
+        // "follow the connection" concept, normalized by the app's doImport.)
+        let dir = std::env::temp_dir().join(format!("mbscada_imp3_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        write_table_slave(&dir, "unit3", 10, 3);
+        write_table_slave(&dir, "unit1", 20, 1);
+
+        let res = import_paths(vec![dir.display().to_string()]);
+        assert_eq!(res.polls.len(), 2);
+        let unit3 = res.polls.iter().find(|p| p.name == "unit3").unwrap();
+        let unit1 = res.polls.iter().find(|p| p.name == "unit1").unwrap();
+        assert_eq!(unit3.slave, 3, "file slave must not be rewritten");
+        assert_eq!(unit1.slave, 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

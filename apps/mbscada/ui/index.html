@@ -237,7 +237,7 @@
           <div class="slave-bar">
             <label><span data-i="sl_port">Порт</span> <input id="slPort" type="number" min="1" max="65535" value="10502" /></label>
             <label><span data-i="sl_unit">Slave ID</span> <input id="slUnit" type="number" min="0" max="247" value="1" /></label>
-            <label><span data-i="sl_frames">Кадры</span>
+            <label data-it="sl_frames_title" title="TCP — Modbus TCP (MBAP); RTU over TCP — RTU-кадры поверх TCP; Serial RTU — физическая линия COM/RS-485"><span data-i="sl_frames">Транспорт</span>
               <select id="slRtu">
                 <option value="tcp">Modbus TCP (MBAP)</option>
                 <option value="rtutcp">RTU over TCP</option>
