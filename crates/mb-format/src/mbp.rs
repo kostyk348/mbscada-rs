@@ -114,6 +114,25 @@ pub fn parse_mbp(data: &[u8], path: &str, name: &str) -> Result<Table> {
     let named = rows.iter().filter(|r| !r.alias.is_empty()).count();
     let confidence = if named > 0 { 0.9 } else { 0.7 };
 
+    // Trailing metadata block [period][slave][1][0][0][qty] — written by our
+    // canonical writer and (in the same layout) by real Modbus Poll files.
+    // Recover period + slave when the backward scan finds it; otherwise keep
+    // the UI defaults. Before v1.4.3 the tail was never consulted, so every
+    // imported poll silently got slave = 1 regardless of the file's device
+    // address (the "polls keep adding unit 1" bug).
+    let (period_ms, slave, tail_note) = match find_tail(data) {
+        Some(t) => (
+            t.period,
+            t.slave as u8,
+            format!("хвост: период {} мс, slave {}", t.period, t.slave),
+        ),
+        None => (
+            1000,
+            1,
+            "хвост не найден — период 1000 мс, slave 1 (умолчания)".into(),
+        ),
+    };
+
     Ok(Table {
         path: path.to_string(),
         name: name.to_string(),
@@ -122,14 +141,14 @@ pub fn parse_mbp(data: &[u8], path: &str, name: &str) -> Result<Table> {
         addr,
         raw_addr,
         qty,
-        period_ms: 1000, // poll period not recovered from the file; UI default
-        slave: 1,        // slave id not recovered; UI default
+        period_ms, // recovered from the tail block; 1000 when absent
+        slave,     // recovered from the tail block; 1 when absent
         fmt16: 0,
         notation: notation_str(notation).to_string(),
         ip,
         rows,
         confidence,
-        notes: format!("qty из заголовка; именованных строк {named}"),
+        notes: format!("qty из заголовка; именованных строк {named}; {tail_note}"),
     })
 }
 

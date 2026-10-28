@@ -1516,6 +1516,12 @@ async function doImport(paths) {
   res.polls.forEach((p) => {
     if (idMap[p.conn_id] !== undefined) p.conn_id = idMap[p.conn_id];
     else if (cfg.connections.length) p.conn_id = cfg.connections[0].id;
+    // Импортированные опросы следуют за соединением пользователя (slave = 0):
+    // адрес из файла относится к той машине, где файл создан, а источник
+    // истины здесь — Slave ID соединения, настроенный пользователем. Без
+    // этой нормализации каждый импорт приколачивал опросы к unit из файла
+    // (обычно 1), и смена Slave ID в коннекшене ни на что не влияла (v1.4.3).
+    p.slave = 0;
   });
 
   let nid = cfg.polls.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
@@ -1622,6 +1628,7 @@ function wireForms() {
         const bar = $("slSerialBar");
         if (bar) bar.hidden = g.mode !== "serial";
         if (g.mode === "serial") fillSlaveSerialPorts();
+        renderSlaveStatus(); // сразу показываем подсказку/статус для выбранного транспорта
       }
       // Транспортные параметры применяются только перезапуском: не молчим,
       // а подсказываем это, когда slave уже слушает линию.
@@ -1645,6 +1652,8 @@ function wireForms() {
       const g = slaveCfg();
       g.serial[key] = cast ? cast(el.value) : el.value;
       if (SLV.running) footer(t("sl_restart_hint"));
+      // Выбор COM-порта сразу снимает/обновляет подсказку у кнопки запуска.
+      if (key === "port") renderSlaveStatus();
     };
   }
   const srf = $("slSerRefresh");
@@ -1728,6 +1737,14 @@ function wireForms() {
           if (p.conn_id === c.id && p.slave === oldSlave) p.slave = 0;
         }
       }
+      // Опросы, чей Slave ID просто повторяет НОВЫЙ адрес соединения,
+      // тоже переводим в режим «следовать» — пересохранение коннекшена с
+      // любым адресом заново привязывает его опросы (v1.4.3).
+      if (c.slave !== 0) {
+        for (const p of cfg.polls) {
+          if (p.conn_id === c.id && p.slave === c.slave) p.slave = 0;
+        }
+      }
       endConnEdit();
       resetConnForm();
     } else {
@@ -1805,7 +1822,7 @@ function wireForms() {
 /* The app answers as a Modbus device (mb-sim on a TCP port), so the master
    side (the tables) and the slave side are both local. The register grid
    edits the slave's data model live; the auto-generator animates it. */
-const SLV = { running: false, addr: "", unit: 1, rtu: false, mode: "", clients: 0, gridSig: null };
+const SLV = { running: false, addr: "", unit: 1, rtu: false, mode: "", clients: 0, gridSig: null, err: "" };
 
 function slaveCfg() {
   if (!cfg.slave || typeof cfg.slave !== "object") cfg.slave = {};
@@ -1865,9 +1882,19 @@ function slaveModeLabel() {
 function renderSlaveStatus() {
   const el = $("slStatus");
   if (el) {
-    el.innerHTML = SLV.running
-      ? `<b class="good">✓ ${esc(SLV.addr)}</b> · Slave ${esc(String(SLV.unit))} · ${slaveModeLabel()}${SLV.mode === "serial" ? "" : ` · ${esc(t("sl_clients"))}: ${SLV.clients}`}`
-      : `<span class="sub">${esc(t("sl_off"))}</span>`;
+    if (SLV.err) {
+      // Ошибка старта висит рядом с кнопкой, пока пользователь не изменит
+      // настройки и не нажмёт «Запустить» ещё раз — футер для этого не годится
+      // (мимо него легко пролистнуть, v1.4.3 UX).
+      el.innerHTML = `<b class="bad">✗ ${esc(t("sl_start_fail"))}: ${esc(SLV.err)}</b>`;
+    } else if (SLV.running) {
+      el.innerHTML = `<b class="good">✓ ${esc(SLV.addr)}</b> · Slave ${esc(String(SLV.unit))} · ${slaveModeLabel()}${SLV.mode === "serial" ? "" : ` · ${esc(t("sl_clients"))}: ${SLV.clients}`}`;
+    } else {
+      const g = slaveCfg();
+      const pick = g.mode === "serial" && !g.serial.port
+        ? ` · <span class="warn">${esc(t("sl_ser_pick"))}</span>` : "";
+      el.innerHTML = `<span class="sub">${esc(t("sl_off_hint"))}</span>${pick}`;
+    }
   }
   const b1 = $("slBtnStart"), b2 = $("slBtnStop");
   if (b1) b1.disabled = SLV.running;
@@ -1895,18 +1922,25 @@ async function slaveStart() {
       };
     }
     const st = await invoke("slave_start", args);
+    SLV.err = "";
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
     SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
     renderSlaveStatus();
     footer(t("sl_started") + st.addr);
     slaveReadAndFill();
-  } catch (e) { footer(String(e), true); }
+  } catch (e) {
+    // Ошибка старта — прямо в статусной строке слейв-панели, а не только в
+    // футере: пользователь должен видеть её там, где нажимал кнопку.
+    SLV.err = String(e);
+    renderSlaveStatus();
+    footer(t("sl_start_fail") + ": " + String(e), true);
+  }
 }
 
 async function slaveStop() {
   if (!hasTauri) { footer(t("sl_need_app"), true); return; }
   try { await invoke("slave_stop"); } catch { /* уже остановлен */ }
-  SLV.running = false; SLV.clients = 0;
+  SLV.running = false; SLV.clients = 0; SLV.err = "";
   renderSlaveStatus();
   footer(t("sl_stopped"));
 }
@@ -1921,7 +1955,7 @@ async function slaveTick() {
     const st = await invoke("slave_status");
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
     SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
-    if (SLV.running) slaveGen();
+    if (SLV.running) { SLV.err = ""; slaveGen(); }
     if (vis) { renderSlaveStatus(); await slaveReadAndFill(); }
   } catch { /* приложение закрывается */ }
 }
@@ -1932,6 +1966,7 @@ async function slaveRefreshNow() {
     const st = await invoke("slave_status");
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
     SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
+    if (SLV.running) SLV.err = "";
     renderSlaveStatus();
     await slaveReadAndFill();
   } catch (e) { footer(String(e), true); }
