@@ -248,3 +248,54 @@ tr.flashrow td { animation: flashfade 0.65s ease-in-out 3; }
 .wparam.stale { opacity: .55; }
 .wparam.blink { animation: blinker 1s step-start infinite; }
 .whint { padding: 4px 8px 6px; border-top: 1px solid var(--line); }
+
+/* ---- v1.3: quick fmt select on poll cards + slave simulator panel ---- */
+.fmtsel {
+  padding: 2px 6px;
+  font-size: 11.5px;
+  border: 1px solid var(--line2, #334155);
+  border-radius: 7px;
+  background: #0d1526;
+  color: var(--text, #e2e8f0);
+  max-width: 130px;
+}
+.fmtsel:hover { border-color: #fbbf24; }
+.card-head .fmtsel { margin-left: 6px; }
+
+.slave-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line2, #334155);
+  border-radius: 10px;
+  background: #0d1526;
+  margin-bottom: 10px;
+}
+.slave-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted, #94a3b8);
+}
+.slave-bar input,
+.slave-bar select {
+  width: 90px;
+  padding: 3px 6px;
+  font-size: 12.5px;
+}
+.slave-bar .hint { flex-basis: 100%; }
+.sl-status { font-size: 12.5px; }
+.sl-status .good { color: #22c55e; }
+
+#slBody input.slin {
+  width: 130px;
+  padding: 2px 6px;
+  font-size: 13px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+#slBody input[type="checkbox"] { width: auto; }
+
+.ggauge { display: block; }

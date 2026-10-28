@@ -62,6 +62,12 @@ pub struct RowView {
     pub name: String,
     pub raw: u16,
     pub value: f64,
+    /// Scaled value (mult/div + offset) the UI shows for numeric formats.
+    pub scaled: f64,
+    /// Raw registers this value is built from (1 for 16-bit formats,
+    /// 2 for 32-bit, 4 for 64-bit) — the UI uses them for hex/bin views
+    /// and for typed (float / 32-bit) writes.
+    pub regs: Vec<u16>,
     pub display: String,
     pub unit: String,
     pub quality: String, // good | bad | off
@@ -573,6 +579,10 @@ fn build_rows(poll: &Poll, regs: &[u16], rules: &[Rule], quality: &str) -> Vec<R
     for (i, addr) in addrs.iter().enumerate() {
         let value = values.get(i).copied().unwrap_or(0.0);
         let raw = regs.get(i * step).copied().unwrap_or(0);
+        let vregs: Vec<u16> = regs
+            .get(i * step..(i + 1) * step)
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
         let x = raw as i64;
 
         let disp = if poll.is_bits() {
@@ -633,6 +643,8 @@ fn build_rows(poll: &Poll, regs: &[u16], rules: &[Rule], quality: &str) -> Vec<R
             name,
             raw,
             value,
+            scaled,
+            regs: vregs,
             display: disp,
             unit: poll.unit.clone(),
             quality: quality.to_string(),

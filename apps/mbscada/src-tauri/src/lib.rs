@@ -8,6 +8,8 @@
 use mb_engine::{
     ComputedTag, Connection, Engine, EngineCfg, Poll, Rule, Snapshot,
 };
+use mb_sim::net::SimServer;
+use mb_sim::Sim;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -78,6 +80,159 @@ impl Default for ArchiveCfg {
 struct AppState {
     cfg: Mutex<Cfg>,
     engine: Mutex<Option<Engine>>,
+}
+
+// ------------------------------------------------------------------ slave --
+// In-app slave simulator: the app answers as a Modbus device so both sides
+// of a setup can be emulated (the master polls devices; the slave panel
+// serves registers that any master — including this app — can read/write).
+
+/// Running in-app slave.
+#[derive(Default)]
+struct SlaveState {
+    run: Mutex<Option<SlaveRun>>,
+}
+
+struct SlaveRun {
+    server: SimServer,
+    unit: u8,
+    rtu: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SlaveStatus {
+    running: bool,
+    addr: String,
+    unit: u8,
+    rtu: bool,
+    clients: usize,
+}
+
+fn slave_status_of(run: Option<&SlaveRun>) -> SlaveStatus {
+    match run {
+        Some(r) => SlaveStatus {
+            running: true,
+            addr: r.server.addr.to_string(),
+            unit: r.unit,
+            rtu: r.rtu,
+            clients: r.server.clients(),
+        },
+        None => SlaveStatus {
+            running: false,
+            addr: String::new(),
+            unit: 1,
+            rtu: false,
+            clients: 0,
+        },
+    }
+}
+
+/// Start the in-app slave simulator (idempotent while running).
+#[tauri::command]
+fn slave_start(slave: State<SlaveState>, port: u16, unit: u8, rtu: bool) -> Result<SlaveStatus, String> {
+    let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
+    if let Some(r) = g.as_ref() {
+        return Ok(slave_status_of(Some(r)));
+    }
+    let bind = format!("0.0.0.0:{port}");
+    let sim = Sim::new(unit);
+    let server = if rtu {
+        mb_sim::net::serve_rtu(sim, &bind)
+    } else {
+        mb_sim::net::serve(sim, &bind)
+    }
+    .map_err(|e| format!("порт {port} занять не удалось: {e}"))?;
+    let st = SlaveStatus {
+        running: true,
+        addr: server.addr.to_string(),
+        unit,
+        rtu,
+        clients: 0,
+    };
+    *g = Some(SlaveRun { server, unit, rtu });
+    Ok(st)
+}
+
+/// Stop the slave simulator and release the port.
+#[tauri::command]
+fn slave_stop(slave: State<SlaveState>) -> Result<(), String> {
+    let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
+    if let Some(r) = g.take() {
+        r.server.stop();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn slave_status(slave: State<SlaveState>) -> SlaveStatus {
+    let g = slave.run.lock().ok();
+    let r = g.as_deref().and_then(|inner| inner.as_ref());
+    slave_status_of(r)
+}
+
+/// Read raw registers/bits of the simulated device (bits come back as 0/1).
+#[tauri::command]
+fn slave_read(slave: State<SlaveState>, area: String, start: u16, qty: u16) -> Result<Vec<u16>, String> {
+    let g = slave.run.lock().map_err(|_| "lock".to_string())?;
+    let run = g.as_ref().ok_or("slave не запущен")?;
+    let sim = run.server.sim.lock().map_err(|_| "lock".to_string())?;
+    let a = start as usize;
+    let n = qty as usize;
+    let out = match area.as_str() {
+        "holding" => sim.holding.get(a..a + n).ok_or("вне диапазона")?.to_vec(),
+        "input" => sim.input.get(a..a + n).ok_or("вне диапазона")?.to_vec(),
+        "coils" => sim
+            .coils
+            .get(a..a + n)
+            .ok_or("вне диапазона")?
+            .iter()
+            .map(|b| *b as u16)
+            .collect(),
+        "discrete" => sim
+            .discrete
+            .get(a..a + n)
+            .ok_or("вне диапазона")?
+            .iter()
+            .map(|b| *b as u16)
+            .collect(),
+        other => return Err(format!("неизвестная область {other}")),
+    };
+    Ok(out)
+}
+
+/// Write raw registers/bits of the simulated device (used by the slave panel
+/// editor and the auto-generator; external masters write via Modbus itself).
+#[tauri::command]
+fn slave_write(slave: State<SlaveState>, area: String, start: u16, values: Vec<u16>) -> Result<(), String> {
+    let g = slave.run.lock().map_err(|_| "lock".to_string())?;
+    let run = g.as_ref().ok_or("slave не запущен")?;
+    let mut sim = run.server.sim.lock().map_err(|_| "lock".to_string())?;
+    let a = start as usize;
+    let n = values.len();
+    match area.as_str() {
+        "holding" => {
+            let dst = sim.holding.get_mut(a..a + n).ok_or("вне диапазона")?;
+            dst.copy_from_slice(&values);
+        }
+        "input" => {
+            let dst = sim.input.get_mut(a..a + n).ok_or("вне диапазона")?;
+            dst.copy_from_slice(&values);
+        }
+        "coils" => {
+            let dst = sim.coils.get_mut(a..a + n).ok_or("вне диапазона")?;
+            for (d, v) in dst.iter_mut().zip(values.iter()) {
+                *d = *v != 0;
+            }
+        }
+        "discrete" => {
+            let dst = sim.discrete.get_mut(a..a + n).ok_or("вне диапазона")?;
+            for (d, v) in dst.iter_mut().zip(values.iter()) {
+                *d = *v != 0;
+            }
+        }
+        other => return Err(format!("неизвестная область {other}")),
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -299,6 +454,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .manage(SlaveState::default())
         .invoke_handler(tauri::generate_handler![
             ping,
             list_serial_ports,
@@ -316,6 +472,11 @@ pub fn run() {
             log_lines,
             suggest_paths,
             import_paths,
+            slave_start,
+            slave_stop,
+            slave_status,
+            slave_read,
+            slave_write,
         ])
         .run(tauri::generate_context!())
         .expect("error while running mbSCADA");
