@@ -105,6 +105,31 @@ struct SlaveRun {
     unit: u8,
     /// Status-line text: `0.0.0.0:10502` or `COM3 @ 9600 8E1`.
     desc: String,
+    /// TCP bind port (for the restart-if-changed check; 0 in serial mode).
+    port: u16,
+    /// Serial settings as requested (None in TCP modes).
+    serial_cfg: Option<SlaveSerialDto>,
+}
+
+impl SlaveRun {
+    fn stop(&self) {
+        if let Some(s) = &self.tcp {
+            s.stop();
+        }
+        if let Some(s) = &self.serial {
+            s.stop();
+        }
+    }
+
+    /// True when a Start request repeats the currently running settings
+    /// (idempotent no-op). Anything different means: restart the transport.
+    fn matches(&self, port: u16, unit: u8, mode: &str, serial: Option<&SlaveSerialDto>) -> bool {
+        self.mode == mode
+            && self.unit == unit
+            && (mode == "serial"
+                || self.port == port)
+            && self.serial_cfg.as_ref() == serial
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,14 +144,40 @@ struct SlaveStatus {
 }
 
 /// Serial line settings coming from the slave panel UI.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// The frontend sends camelCase (`dataBits` / `stopBits`). Tauri renames the
+/// top-level command arguments, but nested structs follow plain serde rules —
+/// without the explicit `rename_all` every serial Start failed with
+/// `missing field data_bits` (the v1.4.0 "serial slave never starts" bug).
+/// All fields default so a missing key degrades to a Modbus-standard line
+/// (9600 8E1) instead of a hard error; an empty `port` is still rejected.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SlaveSerialDto {
+    #[serde(default)]
     port: String,
+    #[serde(default = "def_baud")]
     baud: u32,
     /// "N" | "E" | "O"
+    #[serde(default = "def_parity")]
     parity: String,
+    #[serde(default = "def_data_bits")]
     data_bits: u8,
+    #[serde(default = "def_stop_bits")]
     stop_bits: u8,
+}
+
+fn def_baud() -> u32 {
+    9600
+}
+fn def_parity() -> String {
+    "E".into()
+}
+fn def_data_bits() -> u8 {
+    8
+}
+fn def_stop_bits() -> u8 {
+    1
 }
 
 fn slave_status_of(run: Option<&SlaveRun>) -> SlaveStatus {
@@ -162,13 +213,20 @@ fn slave_start(
 ) -> Result<SlaveStatus, String> {
     let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
     if let Some(r) = g.as_ref() {
-        return Ok(slave_status_of(Some(r)));
+        if r.matches(port, unit, &mode, serial.as_ref()) {
+            return Ok(slave_status_of(Some(r)));
+        }
+        // Settings changed while running — restart the transport with the
+        // new ones instead of silently keeping the old line (v1.4.2).
+        if let Some(old) = g.take() {
+            old.stop();
+        }
     }
-    let (shared, tcp, serialsrv, desc) = match mode.as_str() {
+    let (shared, tcp, serialsrv, desc, serial_cfg) = match mode.as_str() {
         "serial" => {
             let d = serial.ok_or("не заданы параметры COM-порта")?;
-            if d.port.is_empty() {
-                return Err("не выбран COM-порт".into());
+            if d.port.trim().is_empty() {
+                return Err("не выбран COM-порт — выберите порт в панели и нажмите ⟳ Обновить, если адаптер появился недавно".into());
             }
             let p = mb_sim::net::SerialParams {
                 port: d.port.clone(),
@@ -179,9 +237,9 @@ fn slave_start(
             };
             let sim = Arc::new(Mutex::new(Sim::new(unit)));
             let srv = mb_sim::net::serve_serial_shared(Arc::clone(&sim), &p)
-                .map_err(|e| format!("COM-порт {} занять не удалось: {e}", d.port))?;
+                .map_err(|e| e.to_string())?;
             let desc = srv.desc.clone();
-            (sim, None, Some(srv), desc)
+            (sim, None, Some(srv), desc, Some(d))
         }
         _ => {
             let bind = format!("0.0.0.0:{port}");
@@ -193,7 +251,7 @@ fn slave_start(
             }
             .map_err(|e| format!("порт {port} занять не удалось: {e}"))?;
             let desc = server.addr.to_string();
-            (Arc::clone(&server.sim), Some(server), None, desc)
+            (Arc::clone(&server.sim), Some(server), None, desc, None)
         }
     };
     let st = SlaveStatus {
@@ -204,7 +262,16 @@ fn slave_start(
         mode: mode.clone(),
         clients: 0,
     };
-    *g = Some(SlaveRun { sim: shared, tcp, serial: serialsrv, mode, unit, desc });
+    *g = Some(SlaveRun {
+        sim: shared,
+        tcp,
+        serial: serialsrv,
+        mode,
+        unit,
+        desc,
+        port,
+        serial_cfg,
+    });
     Ok(st)
 }
 
@@ -213,12 +280,7 @@ fn slave_start(
 fn slave_stop(slave: State<SlaveState>) -> Result<(), String> {
     let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
     if let Some(r) = g.take() {
-        if let Some(s) = r.tcp {
-            s.stop();
-        }
-        if let Some(s) = r.serial {
-            s.stop();
-        }
+        r.stop();
     }
     Ok(())
 }

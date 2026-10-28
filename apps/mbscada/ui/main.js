@@ -695,6 +695,8 @@ async function fillSlaveSerialPorts(rescan) {
   sel.innerHTML = ports.map((p) => `<option value="${p.name}">${p.name}${p.detail ? " — " + esc(p.detail) : ""}</option>`).join("")
     || `<option value="">${esc(t("sl_ser_none"))}</option>`;
   if (cur) sel.value = cur;
+  const warn = $("slSerWarn");
+  if (warn) warn.hidden = ports.length > 0;
 }
 
 function connFromForm() {
@@ -1621,6 +1623,11 @@ function wireForms() {
         if (bar) bar.hidden = g.mode !== "serial";
         if (g.mode === "serial") fillSlaveSerialPorts();
       }
+      // Транспортные параметры применяются только перезапуском: не молчим,
+      // а подсказываем это, когда slave уже слушает линию.
+      if (SLV.running && ["port", "unit", "mode"].includes(key)) {
+        footer(t("sl_restart_hint"));
+      }
       if (["area", "addr", "qty", "fmt"].includes(key)) {
         SLV.gridSig = null;
         if (SLV.running) slaveRefreshNow();
@@ -1637,6 +1644,7 @@ function wireForms() {
     el.onchange = () => {
       const g = slaveCfg();
       g.serial[key] = cast ? cast(el.value) : el.value;
+      if (SLV.running) footer(t("sl_restart_hint"));
     };
   }
   const srf = $("slSerRefresh");

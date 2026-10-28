@@ -10,7 +10,8 @@ use mb_proto::error::ProtoError;
 use mb_proto::{ascii, mbap, rtu};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub trait Transport: Send {
     fn call(&mut self, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError>;
@@ -99,6 +100,8 @@ impl Transport for RtuOverTcpTransport {
 
 pub struct RtuSerialTransport {
     port: Box<dyn serialport::SerialPort>,
+    /// Overall response wait used by the echo-tolerant read loop.
+    timeout: Duration,
 }
 
 fn parity_of(s: &str) -> serialport::Parity {
@@ -133,16 +136,43 @@ impl RtuSerialTransport {
             .data_bits(data_bits_of(s.data_bits))
             .parity(parity_of(&s.parity))
             .stop_bits(stop_bits_of(s.stop_bits))
-            .timeout(Duration::from_millis(conn.timeout_ms.max(50) as u64))
+            // Short read slices keep the echo-tolerant loop responsive; the
+            // overall wait is bounded by conn.timeout_ms inside `call`.
+            .timeout(Duration::from_millis(50))
             .open()
-            .map_err(|e| ProtoError::Io(format!("open {}: {e}", s.port)))?;
-        Ok(Self { port })
+            .map_err(|e| ProtoError::Io(serial_open_error(&e, &s.port)))?;
+        Ok(Self {
+            port,
+            timeout: Duration::from_millis(conn.timeout_ms.max(50) as u64),
+        })
     }
 }
 
 impl Transport for RtuSerialTransport {
     fn call(&mut self, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
-        rtu_call(&mut self.port, unit, pdu)
+        rtu_call_echo(&mut self.port, unit, pdu, self.timeout)
+    }
+}
+
+/// Human-readable serial open failure (port busy / missing / wrong params).
+/// Shared shape with mb-sim so both sides of the app speak the same text.
+fn serial_open_error(e: &serialport::Error, port: &str) -> String {
+    let hint = match &e.kind {
+        serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
+            "порт занят другой программой — закройте её и повторите"
+        }
+        serialport::ErrorKind::NoDevice
+        | serialport::ErrorKind::Io(std::io::ErrorKind::NotFound) => {
+            "порт не найден — подключите адаптер и обновите список портов"
+        }
+        serialport::ErrorKind::InvalidInput => "неверные параметры линии для этого порта",
+        _ => "",
+    };
+    let base = format!("последовательный порт {port} открыть не удалось: {e}");
+    if hint.is_empty() {
+        base
+    } else {
+        format!("{base} ({hint})")
     }
 }
 
@@ -232,6 +262,109 @@ fn read_into<R: Read>(io: &mut R, buf: &mut Vec<u8>, n: usize) -> Result<(), Pro
     io.read_exact(&mut tmp).map_err(io_err)?;
     buf.extend_from_slice(&tmp);
     Ok(())
+}
+
+// ------------------------------------------------- RTU over half-duplex line
+
+/// Expected RTU **response** frame length from its first bytes
+/// (None = unknown function — keep reading until the deadline).
+/// Shapes: [unit][func]…[crc16], exception = 5 bytes total.
+fn rtu_resp_frame_len(buf: &[u8]) -> Option<usize> {
+    if buf.len() < 2 {
+        return Some(2);
+    }
+    let f = buf[1];
+    if f & 0x80 != 0 {
+        return Some(5); // [unit][f|0x80][exc][crc16]
+    }
+    match f {
+        1 | 2 | 3 | 4 | 23 => {
+            if buf.len() < 3 {
+                return Some(3);
+            }
+            Some(3 + buf[2] as usize + 2) // header + byte count + data + CRC
+        }
+        5 | 6 | 15 | 16 => Some(8), // [unit][f][addr][val/qty][crc16]
+        22 => Some(10),             // [unit][f][addr][and][or][crc16]
+        _ => None,
+    }
+}
+
+/// RTU request/response over a **half-duplex serial line** (2-wire RS-485).
+///
+/// Unlike [`rtu_call`] (full-duplex TCP), many RS-485 adapters loop our own
+/// transmission back to RX, so the bytes read may be
+/// `<echo of the request><response>`. Both layouts are tried and
+/// CRC-verified, so line noise can never pose as a valid frame:
+///
+/// * Candidate A — the buffer starts with our request, a valid response
+///   follows it → the echo is stripped and the response returned.
+/// * Candidate B — the buffer itself is a valid response (no echo).
+///
+/// FC5/6 responses repeat the request verbatim, so a buffer equal to the
+/// request is ambiguous: a short grace window waits for a late real response
+/// (any new byte resets it) before accepting the request-shaped frame.
+pub fn rtu_call_echo<R: Read + Write>(
+    io: &mut R,
+    unit: u8,
+    pdu: &[u8],
+    timeout: Duration,
+) -> Result<Vec<u8>, ProtoError> {
+    let frame = rtu::encode(unit, pdu);
+    io.write_all(&frame).and_then(|_| io.flush()).map_err(io_err)?;
+
+    let deadline = Instant::now() + timeout;
+    let mut rx: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 512];
+    let mut grace: Option<Instant> = None;
+    // Only FC5/6 responses are byte-identical to the request (see doc).
+    let write_resp = matches!(pdu.first(), Some(5 | 6));
+    loop {
+        if Instant::now() >= deadline {
+            return Err(ProtoError::Io("timeout waiting for RTU response".into()));
+        }
+        match io.read(&mut tmp) {
+            Ok(0) => thread::sleep(Duration::from_millis(2)),
+            Ok(n) => {
+                rx.extend_from_slice(&tmp[..n]);
+                grace = None; // the line is still talking — reset the window
+            }
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(io_err(e)),
+        }
+        if rx.len() > 8192 {
+            return Err(ProtoError::Truncated);
+        }
+        // Candidate A: our echo followed by the real response.
+        if rx.starts_with(&frame) && rx.len() > frame.len() {
+            let tail = &rx[frame.len()..];
+            if let Some(need) = rtu_resp_frame_len(tail) {
+                if tail.len() >= need {
+                    if let Ok((_u, out)) = rtu::parse(&tail[..need]) {
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+        // Candidate B: plain response (no echo on the line).
+        if let Some(need) = rtu_resp_frame_len(&rx) {
+            if rx.len() >= need {
+                if let Ok((_u, out)) = rtu::parse(&rx[..need]) {
+                    if write_resp && rx.starts_with(&frame) {
+                        // Ambiguous FC5/6 frame — wait out the grace window.
+                        let g = grace.get_or_insert(Instant::now() + Duration::from_millis(50));
+                        if Instant::now() >= *g {
+                            return Ok(out);
+                        }
+                    } else {
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // --------------------------------------------------------------- ASCII framing
@@ -391,6 +524,110 @@ mod tests {
         };
         let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 };
         let out = ascii_call(&mut io, 0x01, &req.encode());
+        assert!(out.is_err());
+    }
+
+    // ------------------------------------------------ half-duplex RTU echo --
+
+    fn fc3_response(regs: &[u16]) -> Vec<u8> {
+        let mut pdu = vec![0x03u8, regs.len() as u8 * 2];
+        for w in regs {
+            pdu.extend(w.to_be_bytes());
+        }
+        rtu::encode(0x01, &pdu)
+    }
+
+    #[test]
+    fn rtu_resp_frame_len_shapes() {
+        assert_eq!(rtu_resp_frame_len(&[]), Some(2));
+        // exception: [unit][83][exc][crc][crc]
+        assert_eq!(rtu_resp_frame_len(&rtu::encode(1, &[0x83, 0x02])), Some(5));
+        // FC3 with byte count 4: [unit][03][04][d d d d][crc][crc]
+        assert_eq!(rtu_resp_frame_len(&fc3_response(&[10, 20])), Some(9));
+        assert_eq!(rtu_resp_frame_len(&[0x01, 0x03, 0x04]), Some(9));
+        // write-single-register echo shape
+        assert_eq!(rtu_resp_frame_len(&[0x01, 0x06]), Some(8));
+        assert_eq!(rtu_resp_frame_len(&[0x01, 0x16]), Some(10));
+        // unknown function without the exception bit -> unknowable length
+        assert_eq!(rtu_resp_frame_len(&[0x01, 0x11]), None);
+        // any high-bit function byte reads as an exception shape (CRC still
+        // guards the parse, so garbage can never pass)
+        assert_eq!(rtu_resp_frame_len(&[0x01, 0x99]), Some(5));
+    }
+
+    #[test]
+    fn rtu_echo_serial_strips_half_duplex_echo() {
+        // 2-wire RS-485 adapter loops our request back; the slave reply follows.
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 2 };
+        let frame = rtu::encode(0x01, &req.encode());
+        let resp = fc3_response(&[16, 20]);
+        let mut io = MockIo {
+            rx: Cursor::new([&frame[..], &resp[..]].concat()),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
+            .expect("echo must be stripped");
+        assert_eq!(decode_response(&out).unwrap(), Response::Registers(vec![16, 20]));
+        assert_eq!(io.tx, frame, "the request on the wire is a valid RTU frame");
+    }
+
+    #[test]
+    fn rtu_echo_serial_plain_response_no_echo() {
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 2 };
+        let resp = fc3_response(&[7, 8]);
+        let mut io = MockIo {
+            rx: Cursor::new(resp),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
+            .expect("plain response");
+        assert_eq!(decode_response(&out).unwrap(), Response::Registers(vec![7, 8]));
+    }
+
+    #[test]
+    fn rtu_echo_serial_fc6_response_is_the_request() {
+        // No echo: the FC6 response repeats the request verbatim; the grace
+        // window must not break the call.
+        let req = Request::WriteSingleRegister { addr: 4, value: 1234 };
+        let frame = rtu::encode(0x01, &req.encode());
+        let mut io = MockIo {
+            rx: Cursor::new(frame.clone()),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
+            .expect("FC6 response == request must still parse");
+        assert_eq!(out, req.encode());
+
+        // With echo: request + identical response -> the real reply is served.
+        let mut io = MockIo {
+            rx: Cursor::new([&frame[..], &frame[..]].concat()),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
+            .expect("echo + FC6 response");
+        assert_eq!(out, req.encode());
+    }
+
+    #[test]
+    fn rtu_echo_serial_dead_line_times_out() {
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 };
+        let mut io = MockIo {
+            rx: Cursor::new(Vec::new()),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(120));
+        assert!(out.is_err(), "silent line must end in a timeout");
+    }
+
+    #[test]
+    fn rtu_echo_serial_noise_is_never_a_response() {
+        // Garbage that never forms a CRC-valid frame -> timeout, not junk data.
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 };
+        let mut io = MockIo {
+            rx: Cursor::new(vec![0xDE; 64]),
+            tx: Vec::new(),
+        };
+        let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(120));
         assert!(out.is_err());
     }
 }
