@@ -89,7 +89,7 @@
             <form id="pollForm" class="form">
               <label><span data-i="f_name">Имя</span> <input id="pName" value="Holding" /></label>
               <label><span data-i="f_conn">Соединение</span> <select id="pConn"></select></label>
-              <label><span data-i="f_slave">Slave ID</span> <input id="pSlave" type="number" min="1" max="247" value="1" /></label>
+              <label title="0 — следовать за Slave ID соединения (смена адреса подхватывается опросами автоматически); 1–247 — свой адрес этого опроса"><span data-i="f_slave_poll">Slave ID (0 — из соединения)</span> <input id="pSlave" type="number" min="0" max="247" value="0" /></label>
               <label><span data-i="f_func">Функция</span> <select id="pFunc">
                 <option value="3" selected>03 Read Holding</option>
                 <option value="4">04 Read Input</option>

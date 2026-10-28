@@ -373,11 +373,7 @@ impl Engine {
                 // Effective slave: a poll with slave = 0 inherits the
                 // connection's default slave address.
                 let conn = g.connections.get(&p.conn_id);
-                let eff_slave = if p.slave == 0 {
-                    conn.map(|c| c.slave).unwrap_or(1)
-                } else {
-                    p.slave
-                };
+                let eff_slave = eff_slave(p.slave, conn);
                 PollView {
                     id: p.id,
                     name: p.name.clone(),
@@ -523,6 +519,16 @@ impl Snapshot {
             log: vec![],
             ts_ms: now_ms(),
         }
+    }
+}
+
+/// Effective slave address of a poll: `0` means "follow the connection's
+/// default" (falls back to 1 when the connection is unknown).
+fn eff_slave(poll_slave: u8, conn: Option<&Connection>) -> u8 {
+    if poll_slave == 0 {
+        conn.map(|c| c.slave).unwrap_or(1)
+    } else {
+        poll_slave
     }
 }
 
@@ -695,17 +701,30 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
     let mut tr: Option<Box<dyn Transport>> = None;
     let mut next_due: HashMap<u32, Instant> = HashMap::new();
     let mut opens: u64 = 0; // successful transport opens (reconnect diagnostics)
+    let mut pending: Vec<Command> = Vec::new(); // writes waiting for the link
+    let mut last_open_err: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
 
-        // service queued writes on this connection
+        // Collect queued writes. They are flushed only while the link is up;
+        // otherwise they wait in `pending` (bounded) instead of being dropped
+        // silently while the transport is down / reopening.
         while let Ok(cmd) = rx.try_recv() {
-            if let Some(t) = tr.as_mut() {
-                do_command(&inner, t, &conn_id, cmd);
-            }
+            pending.push(cmd);
+        }
+        if pending.len() > 32 {
+            let dropped = pending.len() - 32;
+            pending.drain(..dropped);
+            push_log(
+                &inner,
+                &polls_conn_name(&inner, &conn_id),
+                "ERR",
+                format!("очередь записи переполнена: {dropped} старых команд отброшено"),
+                false,
+            );
         }
 
         let (conn, polls) = {
@@ -731,13 +750,11 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
         let polls: Vec<Poll> = polls
             .into_iter()
             .map(|mut p| {
-                if p.slave == 0 {
-                    p.slave = conn.slave;
-                }
+                p.slave = eff_slave(p.slave, Some(&conn));
                 p
             })
             .collect();
-        if polls.is_empty() {
+        if polls.is_empty() && pending.is_empty() {
             thread::sleep(Duration::from_millis(300));
             continue;
         }
@@ -764,10 +781,26 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                         s.errors += 1;
                         s.last_error = e.to_string();
                     });
-                    push_log(&inner, &conn.name, "ERR", e.to_string(), false);
-                    thread::sleep(Duration::from_millis(800));
+                    // Throttled: a dead device would otherwise spam the log on
+                    // every retry. Queued writes keep waiting in `pending`.
+                    if last_open_err
+                        .map(|t| t.elapsed() > Duration::from_secs(2))
+                        .unwrap_or(true)
+                    {
+                        push_log(&inner, &conn.name, "ERR", e.to_string(), false);
+                        last_open_err = Some(Instant::now());
+                    }
+                    // Write-only pending work retries faster than scans.
+                    thread::sleep(Duration::from_millis(if polls.is_empty() { 200 } else { 800 }));
                     continue;
                 }
+            }
+        }
+
+        // The link is up — flush queued writes oldest-first, before reads.
+        if !pending.is_empty() {
+            for cmd in pending.drain(..) {
+                do_command(&inner, tr.as_mut().unwrap(), &conn_id, cmd);
             }
         }
 
@@ -863,6 +896,23 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::eff_slave;
+    use crate::model::Connection;
+
+    #[test]
+    fn eff_slave_follows_connection() {
+        let c: Connection = serde_json::from_str(
+            r#"{"id":"c","name":"C","kind":"tcp","host":"1.2.3.4","port":502,"slave":9}"#,
+        )
+        .unwrap();
+        assert_eq!(eff_slave(0, Some(&c)), 9, "0 = follow the connection");
+        assert_eq!(eff_slave(3, Some(&c)), 3, "explicit poll address wins");
+        assert_eq!(eff_slave(0, None), 1, "unknown connection falls back to 1");
+    }
+}
+
 fn polls_conn_name(inner: &Arc<Mutex<Inner>>, conn_id: &str) -> String {
     inner
         .lock()
@@ -890,11 +940,11 @@ fn do_command(inner: &Arc<Mutex<Inner>>, tr: &mut Box<dyn Transport>, conn_id: &
             };
             // Same slave inheritance as the read path: poll.slave = 0 means
             // "use the connection default".
-            if poll.slave == 0 {
-                if let Some(c) = inner.lock().ok().and_then(|g| g.connections.get(conn_id).cloned()) {
-                    poll.slave = c.slave;
-                }
-            }
+            let conn_now = inner
+                .lock()
+                .ok()
+                .and_then(|g| g.connections.get(conn_id).cloned());
+            poll.slave = eff_slave(poll.slave, conn_now.as_ref());
             let req = if multi {
                 Request::WriteMultipleRegisters {
                     addr,
