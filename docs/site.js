@@ -14,7 +14,7 @@ var DICT = {
     "hero.live": "All local — no cloud, no telemetry",
     "hero.title": "Modbus Poll, reimagined — in pure Rust.",
     "hero.sub": "A clean-room Modbus SCADA: poll TCP & RTU devices into live tables, import real Modbus Poll .mbp/.mbw files byte-exactly, style every row with a 32-branch rule tree, build operator mimics and emulate slave devices — in a single ~6 MB executable.",
-    "hero.cta.dl": "⬇ Download v1.3.0",
+    "hero.cta.dl": "⬇ Download v1.4.0",
     "hero.cta.gh": "★ View on GitHub",
 
     "stat1": "single executable",
@@ -45,6 +45,8 @@ var DICT = {
     "f9.d": "One click in the toolbar flips the entire UI between Russian and English. Documentation ships in both languages, and this site speaks both too.",
     "f10.t": "Slave simulator <span class=\"tag\">v1.3</span>",
     "f10.d": "A virtual Modbus device inside the app: TCP & RTU-over-TCP on any port, an editable register map you type values into, mixed data types (real / int / uint / hex) side by side, sine / saw / noise autogeneration, right-click dec → hex → bin per cell — and the map lives in the project file.",
+    "f11.t": "Serial RTU slave <span class=\"tag\">v1.4</span>",
+    "f11.d": "The same virtual device, but on a real wire: pick a COM / ttyUSB port behind a USB-RS485 adapter, set baud / parity / stop bits and let any hardware master poll it — MBAP, RTU-over-TCP and now physical RTU, with automatic resync when the line picks up garbage.",
 
     "sec.s.title": "A 30-second look",
     "sec.s.lead": "Real screenshots from the demo project — tables, mimic and the watch window, exactly as they ship.",
@@ -65,7 +67,7 @@ var DICT = {
     "a.sim": "Virtual Modbus slaves that hang, corrupt CRC and disconnect — 72 tests pass without a single physical device.",
     "a.app": "The application: Tauri 2 + vanilla JS — no frameworks, no bundler, instant start, ~6 MB binary.",
 
-    "sec.d.title": "Download v1.3.0",
+    "sec.d.title": "Download v1.4.0",
     "sec.d.lead": "Prebuilt installers for every platform — no Rust toolchain needed. Built automatically by GitHub Actions from a v* tag: five runners, one commit, all platforms.",
     "dl.win.t": "Windows 10/11 x64",
     "dl.win.d": "NSIS installer .exe · .msi — WebView2 is preinstalled on Win10/11.",
@@ -85,8 +87,7 @@ var DICT = {
 
     "sec.r.title": "Roadmap",
     "sec.r.lead": "Shipped so far and what’s next — open an issue if something matters to you.",
-    "r0": "v1.0–v1.3: live tables, rule tree, alarm panel, mimics, computed tags, CSV archive, watch window, slave simulator with typed values",
-    "r1": "v1.4: slave simulator on a physical COM/RS-485 line (serial RTU)",
+    "r0": "v1.0–v1.4: live tables, rule tree, alarm panel, mimics, computed tags, CSV archive, watch window, slave simulator with typed values, serial RTU slave on COM/RS-485",
     "r1b": "Alarm history export with filters",
     "r2": "Trend plots for computed tags",
     "r3": "More mimic widgets and archive scheduling",
@@ -111,7 +112,7 @@ var DICT = {
     "hero.live": "Всё локально — без облака и телеметрии",
     "hero.title": "Modbus Poll, переосмысленный — на чистом Rust.",
     "hero.sub": "Clean-room SCADA для Modbus: опрос устройств по TCP и RTU в живые таблицы, byte-exact импорт настоящих файлов Modbus Poll (.mbp/.mbw), дерево правил на 32 ветки, операторская мимика и встроенный симулятор slave-устройств — в одном бинарнике ~6 МБ.",
-    "hero.cta.dl": "⬇ Скачать v1.3.0",
+    "hero.cta.dl": "⬇ Скачать v1.4.0",
     "hero.cta.gh": "★ Смотреть на GitHub",
 
     "stat1": "исполняемый файл",
@@ -142,6 +143,8 @@ var DICT = {
     "f9.d": "Один клик в тулбаре переключает весь интерфейс между русским и английским. Документация на обоих языках — и этот сайт тоже говорит на обоих.",
     "f10.t": "Симулятор slave <span class=\"tag\">v1.3</span>",
     "f10.d": "Виртуальное Modbus-устройство внутри приложения: TCP и RTU-over-TCP на любом порту, редактируемая карта регистров с вводом значений, разнородные типы (real / int / uint / hex) вперемешку, автогенерация синус / пила / шум, ПКМ по ячейке — dec → hex → bin, а карта сохраняется в файле проекта.",
+    "f11.t": "Serial RTU-слейв <span class=\"tag\">v1.4</span>",
+    "f11.d": "Тот же виртуальный прибор, но на настоящем проводе: выберите COM / ttyUSB порт за USB-RS485 адаптером, задайте скорость / чётность / стоп-биты — и опрашивайте его любым «железным» мастером. MBAP, RTU-over-TCP и теперь физический RTU с автопросыпанием после мусора в линии.",
 
     "sec.s.title": "Полминуты взгляда",
     "sec.s.lead": "Настоящие скриншоты из демо-проекта — таблицы, мимика и окно параметров ровно в том виде, в каком поставляются.",
@@ -162,7 +165,7 @@ var DICT = {
     "a.sim": "Виртуальные слейвы, которые зависают, портят CRC и отваливаются — 72 теста проходят без единого физического устройства.",
     "a.app": "Приложение: Tauri 2 + ванильный JS — без фреймворков и бандлеров, мгновенный старт, бинарник ~6 МБ.",
 
-    "sec.d.title": "Скачать v1.3.0",
+    "sec.d.title": "Скачать v1.4.0",
     "sec.d.lead": "Готовые установщики под все платформы — тулчейн не нужен. Каждый релиз собирается автоматически GitHub Actions из тега v*: пять раннеров, один коммит, все платформы.",
     "dl.win.t": "Windows 10/11 x64",
     "dl.win.d": "Установщик NSIS .exe · .msi — WebView2 уже предустановлен в Win10/11.",
@@ -182,8 +185,7 @@ var DICT = {
 
     "sec.r.title": "Планы",
     "sec.r.lead": "Что уже сделано и что дальше — если что-то из этого важно вам, откройте issue.",
-    "r0": "v1.0–v1.3: живые таблицы, дерево правил, панель аварий, мимика, вычисляемые тэги, CSV-архив, окно параметров, симулятор slave с типизированными значениями",
-    "r1": "v1.4: симулятор slave на физической линии COM/RS-485 (serial RTU)",
+    "r0": "v1.0–v1.4: живые таблицы, дерево правил, панель аварий, мимика, вычисляемые тэги, CSV-архив, окно параметров, симулятор slave с типизированными значениями, serial RTU-слейв на COM/RS-485",
     "r1b": "Экспорт истории аварий с фильтрами",
     "r2": "Графики трендов по вычисляемым тэгам",
     "r3": "Больше виджетов мимики и расписания архивирования",
