@@ -1032,7 +1032,7 @@ function buildGrid(grid) {
     const cn = cfg.connections.find((c) => c.id === p.conn_id);
     const connTxt = cn ? esc(cn.name) : `<span class="bad">${esc(t("no_conn"))}</span>`;
     head.innerHTML = `<h2>${esc(p.name)}</h2>
-      <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · slave ${p.slave} · ${p.scan_ms}${t("ms")} · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
+      <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · ${p.slave ? "slave " + p.slave : esc(t("slave_from_conn"))} · ${p.scan_ms}${t("ms")} · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
       <span class="stat"></span>`;
     // Quick data-type switch (like Modbus Poll Number Type) — one click right
     // after the import; rows = qty / registers-per-value.
@@ -1326,6 +1326,7 @@ function editPoll(p) {
 }
 function endPollEdit() {
   editingPoll = null;
+  $("pSlave").value = 0; // новый полл по умолчанию следует за соединением
   $("btnPollSubmit").textContent = t("b_add_poll");
   $("btnPollCancel").hidden = true;
 }
@@ -1695,11 +1696,11 @@ function wireForms() {
   if (aa) aa.onchange = () => { cfg.archive.all_values = aa.checked; apply(); };
   if (ap) ap.onchange = () => { cfg.archive.interval_s = Math.max(1, Number(ap.value) || 5); ap.value = cfg.archive.interval_s; apply(); };
 
-  // Смена соединения в форме опроса — Slave ID подтягивается из соединения
-  // (можно переопределить вручную).
+  // Смена соединения в форме опроса — по умолчанию полл следует за адресом
+  // соединения (0), поэтому смена Slave ID в коннекшене подхватывается
+  // опросами автоматически; конкретный адрес вводится вручную (1–247).
   $("pConn").onchange = () => {
-    const c = cfg.connections.find((x) => x.id === $("pConn").value);
-    if (c && c.slave != null) $("pSlave").value = c.slave;
+    $("pSlave").value = 0;
   };
 
   $("connForm").onsubmit = (e) => {
@@ -1708,8 +1709,17 @@ function wireForms() {
     c.name = $("cName").value || c.name;
     if (editingConn) {
       // id не меняем — на него ссылаются опросы.
+      const oldSlave = editingConn.slave;
       c.id = editingConn.id;
       Object.assign(editingConn, c);
+      // Поллы, чей Slave ID просто повторял прежний адрес соединения,
+      // переводим в режим «следовать за соединением» (0): смена адреса
+      // в коннекшене отныне подхватывается опросами автоматически.
+      if (oldSlave != null && oldSlave !== c.slave) {
+        for (const p of cfg.polls) {
+          if (p.conn_id === c.id && p.slave === oldSlave) p.slave = 0;
+        }
+      }
       endConnEdit();
       resetConnForm();
     } else {

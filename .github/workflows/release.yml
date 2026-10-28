@@ -17,8 +17,9 @@ jobs:
           - os: ubuntu-22.04 # x86_64, older glibc for wider AppImage compat
           - os: ubuntu-22.04-arm # aarch64 (free arm runner for public repos)
           - os: windows-latest # x86_64 MSVC
-          - os: macos-latest # aarch64 (Apple Silicon)
-          - os: macos-13 # x86_64 (Intel)
+          - os: macos-latest # aarch64 (Apple Silicon; x86_64 Intel builds via
+            # `cargo build --target x86_64-apple-darwin` from source — the
+            # free macos-13 runner pool is retired and queued jobs forever)
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

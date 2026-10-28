@@ -22,7 +22,7 @@
       // connection form
       f_name: "Имя", f_kind: "Тип", f_ip: "IP", f_port: "Порт", f_com: "COM",
       f_baud: "Скорость", f_parity: "Чётность", f_data: "Биты данных", f_stop: "Стоп-биты",
-      f_slave: "Slave ID", f_timeout: "Таймаут, мс",
+      f_slave: "Slave ID", f_slave_poll: "Slave ID (0 — из соединения)", f_timeout: "Таймаут, мс",
       b_ports: "⟳ Порты", b_test: "Проверить связь", b_cancel: "Отмена",
       b_add_conn: "Добавить соединение",
       edit_conn: "Сохранить соединение", edit_poll: "Сохранить опрос", edit_rule: "Сохранить ветку",
@@ -173,7 +173,7 @@
       al_sound_title: "beep when a new alarm appears",
       f_name: "Name", f_kind: "Type", f_ip: "IP", f_port: "Port", f_com: "COM",
       f_baud: "Baud", f_parity: "Parity", f_data: "Data bits", f_stop: "Stop bits",
-      f_slave: "Slave ID", f_timeout: "Timeout, ms",
+      f_slave: "Slave ID", f_slave_poll: "Slave ID (0 — from connection)", f_timeout: "Timeout, ms",
       b_ports: "⟳ Ports", b_test: "Test connection", b_cancel: "Cancel",
       b_add_conn: "Add connection",
       edit_conn: "Save connection", edit_poll: "Save poll", edit_rule: "Save branch",
