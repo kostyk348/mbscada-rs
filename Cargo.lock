@@ -1800,6 +1800,7 @@ name = "mb-sim"
 version = "1.3.0"
 dependencies = [
  "mb-proto",
+ "serialport",
 ]
 
 [[package]]

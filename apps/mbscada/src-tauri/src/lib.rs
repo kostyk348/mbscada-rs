@@ -11,7 +11,7 @@ use mb_engine::{
 use mb_sim::net::SimServer;
 use mb_sim::Sim;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -93,10 +93,18 @@ struct SlaveState {
     run: Mutex<Option<SlaveRun>>,
 }
 
+/// One active slave transport: a TCP listener (MBAP or RTU-over-TCP) or a
+/// physical serial line. The device state (`sim`) is shared with the slave
+/// panel editor and the auto-generator either way.
 struct SlaveRun {
-    server: SimServer,
+    sim: Arc<Mutex<Sim>>,
+    tcp: Option<SimServer>,
+    serial: Option<mb_sim::net::SerialServer>,
+    /// "tcp" | "rtutcp" | "serial"
+    mode: String,
     unit: u8,
-    rtu: bool,
+    /// Status-line text: `0.0.0.0:10502` or `COM3 @ 9600 8E1`.
+    desc: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,52 +112,99 @@ struct SlaveStatus {
     running: bool,
     addr: String,
     unit: u8,
+    /// Legacy mirror of `mode == "rtutcp"` (v1.3 UI used a bool).
     rtu: bool,
+    mode: String,
     clients: usize,
+}
+
+/// Serial line settings coming from the slave panel UI.
+#[derive(Debug, Clone, Deserialize)]
+struct SlaveSerialDto {
+    port: String,
+    baud: u32,
+    /// "N" | "E" | "O"
+    parity: String,
+    data_bits: u8,
+    stop_bits: u8,
 }
 
 fn slave_status_of(run: Option<&SlaveRun>) -> SlaveStatus {
     match run {
         Some(r) => SlaveStatus {
             running: true,
-            addr: r.server.addr.to_string(),
+            addr: r.desc.clone(),
             unit: r.unit,
-            rtu: r.rtu,
-            clients: r.server.clients(),
+            rtu: r.mode == "rtutcp",
+            mode: r.mode.clone(),
+            clients: r.tcp.as_ref().map(|s| s.clients()).unwrap_or(0),
         },
         None => SlaveStatus {
             running: false,
             addr: String::new(),
             unit: 1,
             rtu: false,
+            mode: String::new(),
             clients: 0,
         },
     }
 }
 
 /// Start the in-app slave simulator (idempotent while running).
+/// `mode`: "tcp" | "rtutcp" | "serial" (physical COM/RS-485 line).
 #[tauri::command]
-fn slave_start(slave: State<SlaveState>, port: u16, unit: u8, rtu: bool) -> Result<SlaveStatus, String> {
+fn slave_start(
+    slave: State<SlaveState>,
+    port: u16,
+    unit: u8,
+    mode: String,
+    serial: Option<SlaveSerialDto>,
+) -> Result<SlaveStatus, String> {
     let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
     if let Some(r) = g.as_ref() {
         return Ok(slave_status_of(Some(r)));
     }
-    let bind = format!("0.0.0.0:{port}");
-    let sim = Sim::new(unit);
-    let server = if rtu {
-        mb_sim::net::serve_rtu(sim, &bind)
-    } else {
-        mb_sim::net::serve(sim, &bind)
-    }
-    .map_err(|e| format!("порт {port} занять не удалось: {e}"))?;
+    let (shared, tcp, serialsrv, desc) = match mode.as_str() {
+        "serial" => {
+            let d = serial.ok_or("не заданы параметры COM-порта")?;
+            if d.port.is_empty() {
+                return Err("не выбран COM-порт".into());
+            }
+            let p = mb_sim::net::SerialParams {
+                port: d.port.clone(),
+                baud: d.baud,
+                parity: d.parity.chars().next().unwrap_or('E'),
+                data_bits: d.data_bits,
+                stop_bits: d.stop_bits,
+            };
+            let sim = Arc::new(Mutex::new(Sim::new(unit)));
+            let srv = mb_sim::net::serve_serial_shared(Arc::clone(&sim), &p)
+                .map_err(|e| format!("COM-порт {} занять не удалось: {e}", d.port))?;
+            let desc = srv.desc.clone();
+            (sim, None, Some(srv), desc)
+        }
+        _ => {
+            let bind = format!("0.0.0.0:{port}");
+            let rtu = mode == "rtutcp";
+            let server = if rtu {
+                mb_sim::net::serve_rtu(Sim::new(unit), &bind)
+            } else {
+                mb_sim::net::serve(Sim::new(unit), &bind)
+            }
+            .map_err(|e| format!("порт {port} занять не удалось: {e}"))?;
+            let desc = server.addr.to_string();
+            (Arc::clone(&server.sim), Some(server), None, desc)
+        }
+    };
     let st = SlaveStatus {
         running: true,
-        addr: server.addr.to_string(),
+        addr: desc.clone(),
         unit,
-        rtu,
+        rtu: mode == "rtutcp",
+        mode: mode.clone(),
         clients: 0,
     };
-    *g = Some(SlaveRun { server, unit, rtu });
+    *g = Some(SlaveRun { sim: shared, tcp, serial: serialsrv, mode, unit, desc });
     Ok(st)
 }
 
@@ -158,7 +213,12 @@ fn slave_start(slave: State<SlaveState>, port: u16, unit: u8, rtu: bool) -> Resu
 fn slave_stop(slave: State<SlaveState>) -> Result<(), String> {
     let mut g = slave.run.lock().map_err(|_| "lock".to_string())?;
     if let Some(r) = g.take() {
-        r.server.stop();
+        if let Some(s) = r.tcp {
+            s.stop();
+        }
+        if let Some(s) = r.serial {
+            s.stop();
+        }
     }
     Ok(())
 }
@@ -175,7 +235,7 @@ fn slave_status(slave: State<SlaveState>) -> SlaveStatus {
 fn slave_read(slave: State<SlaveState>, area: String, start: u16, qty: u16) -> Result<Vec<u16>, String> {
     let g = slave.run.lock().map_err(|_| "lock".to_string())?;
     let run = g.as_ref().ok_or("slave не запущен")?;
-    let sim = run.server.sim.lock().map_err(|_| "lock".to_string())?;
+    let sim = run.sim.lock().map_err(|_| "lock".to_string())?;
     let a = start as usize;
     let n = qty as usize;
     let out = match area.as_str() {
@@ -206,7 +266,7 @@ fn slave_read(slave: State<SlaveState>, area: String, start: u16, qty: u16) -> R
 fn slave_write(slave: State<SlaveState>, area: String, start: u16, values: Vec<u16>) -> Result<(), String> {
     let g = slave.run.lock().map_err(|_| "lock".to_string())?;
     let run = g.as_ref().ok_or("slave не запущен")?;
-    let mut sim = run.server.sim.lock().map_err(|_| "lock".to_string())?;
+    let mut sim = run.sim.lock().map_err(|_| "lock".to_string())?;
     let a = start as usize;
     let n = values.len();
     match area.as_str() {

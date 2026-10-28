@@ -676,6 +676,25 @@ async function refreshPorts() {
   const cur = sel.value;
   sel.innerHTML = ports.map((p) => `<option value="${p.name}">${p.name}${p.detail ? " — " + esc(p.detail) : ""}</option>`).join("") || `<option>COM1</option>`;
   if (cur) sel.value = cur;
+  fillSlaveSerialPorts();
+}
+
+// Fill the slave panel's COM-port select from the shared port list.
+// `rescan` forces a fresh probe of the OS ports (⟳ button).
+async function fillSlaveSerialPorts(rescan) {
+  const sel = $("slSerPort");
+  if (!sel) return;
+  if (rescan || !ports.length) {
+    if (hasTauri) {
+      try { ports = await invoke("list_serial_ports"); } catch { ports = []; }
+    } else {
+      ports = [{ name: "COM1", detail: "" }, { name: "COM3", detail: "" }];
+    }
+  }
+  const cur = slaveCfg().serial.port || sel.value;
+  sel.innerHTML = ports.map((p) => `<option value="${p.name}">${p.name}${p.detail ? " — " + esc(p.detail) : ""}</option>`).join("")
+    || `<option value="">${esc(t("sl_ser_none"))}</option>`;
+  if (cur) sel.value = cur;
 }
 
 function connFromForm() {
@@ -1585,7 +1604,7 @@ function wireForms() {
   const sbp = $("slBtnStop");
   if (sbp) sbp.onclick = slaveStop;
   const slaveFields = [
-    ["slPort", "port", Number], ["slUnit", "unit", Number], ["slRtu", "rtu", null],
+    ["slPort", "port", Number], ["slUnit", "unit", Number], ["slRtu", "mode", null],
     ["slArea", "area", null], ["slAddr", "addr", Number], ["slQty", "qty", Number],
     ["slFmt", "fmt", null], ["slGen", "gen", null],
     ["slGenAmp", "genAmp", Number], ["slGenBase", "genBase", Number], ["slGenPeriod", "genPeriod", Number],
@@ -1595,13 +1614,32 @@ function wireForms() {
     if (!el) continue;
     el.onchange = () => {
       const g = slaveCfg();
-      g[key] = cast ? cast(el.value) : (key === "rtu" ? el.value === "rtu" : el.value);
+      g[key] = cast ? cast(el.value) : el.value;
+      if (key === "mode") {
+        const bar = $("slSerialBar");
+        if (bar) bar.hidden = g.mode !== "serial";
+        if (g.mode === "serial") fillSlaveSerialPorts();
+      }
       if (["area", "addr", "qty", "fmt"].includes(key)) {
         SLV.gridSig = null;
         if (SLV.running) slaveRefreshNow();
       }
     };
   }
+  const slaveSerialFields = [
+    ["slSerPort", "port", null], ["slSerBaud", "baud", Number],
+    ["slSerParity", "parity", null], ["slSerData", "data", Number], ["slSerStop", "stop", Number],
+  ];
+  for (const [id, key, cast] of slaveSerialFields) {
+    const el = $(id);
+    if (!el) continue;
+    el.onchange = () => {
+      const g = slaveCfg();
+      g.serial[key] = cast ? cast(el.value) : el.value;
+    };
+  }
+  const srf = $("slSerRefresh");
+  if (srf) srf.onclick = () => fillSlaveSerialPorts(true);
 
   document.querySelectorAll(".tab").forEach((t) => {
     t.onclick = () => {
@@ -1749,7 +1787,7 @@ function wireForms() {
 /* The app answers as a Modbus device (mb-sim on a TCP port), so the master
    side (the tables) and the slave side are both local. The register grid
    edits the slave's data model live; the auto-generator animates it. */
-const SLV = { running: false, addr: "", unit: 1, rtu: false, clients: 0, gridSig: null };
+const SLV = { running: false, addr: "", unit: 1, rtu: false, mode: "", clients: 0, gridSig: null };
 
 function slaveCfg() {
   if (!cfg.slave || typeof cfg.slave !== "object") cfg.slave = {};
@@ -1757,6 +1795,14 @@ function slaveCfg() {
   if (g.port == null) g.port = 10502;
   if (g.unit == null) g.unit = 1;
   if (g.rtu == null) g.rtu = false;
+  // v1.4: transport mode — migrated from the legacy rtu bool
+  if (!g.mode) g.mode = g.rtu ? "rtutcp" : "tcp";
+  if (!g.serial || typeof g.serial !== "object") g.serial = {};
+  if (!g.serial.port) g.serial.port = "";
+  if (g.serial.baud == null) g.serial.baud = 9600;
+  if (!g.serial.parity) g.serial.parity = "E";
+  if (g.serial.data == null) g.serial.data = 8;
+  if (g.serial.stop == null) g.serial.stop = 1;
   if (!g.area) g.area = "holding";
   if (g.addr == null) g.addr = 0;
   if (g.qty == null) g.qty = 16;
@@ -1771,22 +1817,38 @@ function slaveCfg() {
 function slaveSyncForm() {
   const g = slaveCfg();
   const map = {
-    slPort: "port", slUnit: "unit", slRtu: "rtu", slArea: "area", slAddr: "addr",
+    slPort: "port", slUnit: "unit", slRtu: "mode", slArea: "area", slAddr: "addr",
     slQty: "qty", slFmt: "fmt", slGen: "gen", slGenAmp: "genAmp",
     slGenBase: "genBase", slGenPeriod: "genPeriod",
   };
   for (const [id, key] of Object.entries(map)) {
     const el = $(id);
     if (!el) continue;
-    el.value = key === "rtu" ? (g.rtu ? "rtu" : "tcp") : String(g[key]);
+    el.value = String(g[key]);
   }
+  const ser = g.serial;
+  const smap = { slSerPort: "port", slSerBaud: "baud", slSerParity: "parity", slSerData: "data", slSerStop: "stop" };
+  for (const [id, key] of Object.entries(smap)) {
+    const el = $(id);
+    if (el && ser[key] !== undefined && ser[key] !== "") el.value = String(ser[key]);
+  }
+  const bar = $("slSerialBar");
+  if (bar) bar.hidden = g.mode !== "serial";
+  if (g.mode === "serial") fillSlaveSerialPorts();
+}
+
+function slaveModeLabel() {
+  if (SLV.mode === "serial") return "Serial RTU";
+  if (SLV.mode === "rtutcp") return "RTU/TCP";
+  if (SLV.mode === "tcp") return "TCP";
+  return SLV.rtu ? "RTU/TCP" : "TCP";
 }
 
 function renderSlaveStatus() {
   const el = $("slStatus");
   if (el) {
     el.innerHTML = SLV.running
-      ? `<b class="good">✓ ${esc(SLV.addr)}</b> · Slave ${esc(String(SLV.unit))} · ${SLV.rtu ? "RTU/TCP" : "TCP"} · ${esc(t("sl_clients"))}: ${SLV.clients}`
+      ? `<b class="good">✓ ${esc(SLV.addr)}</b> · Slave ${esc(String(SLV.unit))} · ${slaveModeLabel()}${SLV.mode === "serial" ? "" : ` · ${esc(t("sl_clients"))}: ${SLV.clients}`}`
       : `<span class="sub">${esc(t("sl_off"))}</span>`;
   }
   const b1 = $("slBtnStart"), b2 = $("slBtnStop");
@@ -1798,13 +1860,25 @@ async function slaveStart() {
   if (!hasTauri) { footer(t("sl_need_app"), true); return; }
   const g = slaveCfg();
   try {
-    const st = await invoke("slave_start", {
+    const args = {
       port: Math.max(1, Math.min(65535, Number(g.port) || 10502)),
       unit: Math.max(0, Math.min(247, Number(g.unit) || 1)),
-      rtu: !!g.rtu,
-    });
+      mode: g.mode || "tcp",
+      serial: null,
+    };
+    if (args.mode === "serial") {
+      if (!g.serial.port) { footer(t("sl_ser_pick"), true); return; }
+      args.serial = {
+        port: g.serial.port,
+        baud: Number(g.serial.baud) || 9600,
+        parity: g.serial.parity || "E",
+        dataBits: Number(g.serial.data) || 8,
+        stopBits: Number(g.serial.stop) || 1,
+      };
+    }
+    const st = await invoke("slave_start", args);
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
-    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
     renderSlaveStatus();
     footer(t("sl_started") + st.addr);
     slaveReadAndFill();
@@ -1828,7 +1902,7 @@ async function slaveTick() {
   try {
     const st = await invoke("slave_status");
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
-    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
     if (SLV.running) slaveGen();
     if (vis) { renderSlaveStatus(); await slaveReadAndFill(); }
   } catch { /* приложение закрывается */ }
@@ -1839,7 +1913,7 @@ async function slaveRefreshNow() {
   try {
     const st = await invoke("slave_status");
     SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
-    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    SLV.rtu = st.rtu; SLV.mode = st.mode; SLV.clients = st.clients;
     renderSlaveStatus();
     await slaveReadAndFill();
   } catch (e) { footer(String(e), true); }

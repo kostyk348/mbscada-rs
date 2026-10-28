@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 mb-proto = { path = "../mb-proto" }
+serialport = "4"

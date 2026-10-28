@@ -240,12 +240,38 @@
             <label><span data-i="sl_frames">Кадры</span>
               <select id="slRtu">
                 <option value="tcp">Modbus TCP (MBAP)</option>
-                <option value="rtu">RTU over TCP</option>
+                <option value="rtutcp">RTU over TCP</option>
+                <option value="serial" data-i="sl_frames_serial">Serial RTU (COM/RS-485)</option>
               </select>
             </label>
             <button id="slBtnStart" class="primary" data-i="sl_start" data-it="sl_start_title">▶ Запустить slave</button>
             <button id="slBtnStop" data-i="sl_stop" data-it="sl_stop_title">■ Остановить</button>
             <span id="slStatus" class="sl-status"></span>
+          </div>
+          <div class="slave-bar" id="slSerialBar" hidden>
+            <label><span data-i="sl_ser_port">COM-порт</span> <select id="slSerPort"></select></label>
+            <button id="slSerRefresh" data-i="sl_ser_refresh" data-it="sl_ser_refresh_title">⟳ Обновить</button>
+            <label><span data-i="sl_ser_baud">Скорость</span>
+              <select id="slSerBaud">
+                <option>1200</option><option>2400</option><option>4800</option>
+                <option selected>9600</option><option>19200</option><option>38400</option>
+                <option>57600</option><option>115200</option>
+              </select>
+            </label>
+            <label><span data-i="sl_ser_parity">Чётность</span>
+              <select id="slSerParity">
+                <option value="E" selected>E (чёт.)</option>
+                <option value="N">N (нет)</option>
+                <option value="O">O (нечёт.)</option>
+              </select>
+            </label>
+            <label><span data-i="sl_ser_data">Данные</span>
+              <select id="slSerData"><option selected>8</option><option>7</option></select>
+            </label>
+            <label><span data-i="sl_ser_stop">Стоп-биты</span>
+              <select id="slSerStop"><option selected>1</option><option>2</option></select>
+            </label>
+            <span class="hint" data-i="sl_ser_note"></span>
           </div>
           <div class="slave-bar">
             <label><span data-i="sl_area">Область</span>

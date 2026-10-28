@@ -3,6 +3,8 @@
 //! * [`serve`] — Modbus/TCP (MBAP framing).
 //! * [`serve_rtu`] — Modbus RTU framing tunnelled over TCP (exercises the same
 //!   RTU code path as a real serial port).
+//! * [`serve_serial`] — Modbus RTU on a **physical serial port** (COM / ttyUSB
+//!   via a USB-RS485 adapter): same RTU framing, resync on line garbage.
 //!
 //! Both servers are stoppable: [`SimServer::stop`] stops accepting new
 //! connections and force-closes the live ones, freeing the bound port. A
@@ -15,7 +17,7 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A running simulator: its bound address and shared device state.
 pub struct SimServer {
@@ -246,6 +248,193 @@ fn rtu_frame_len(buf: &[u8]) -> Option<usize> {
     Some(fixed + 2) // CRC16
 }
 
+
+// ------------------------------------------------------------ serial RTU --
+
+/// Serial line settings for a physical RTU slave (USB-RS485 adapter, COM port).
+#[derive(Debug, Clone)]
+pub struct SerialParams {
+    /// OS port name: `COM3`, `/dev/ttyUSB0`, `/dev/ttyS0`…
+    pub port: String,
+    /// Baud rate (9600 is the Modbus default).
+    pub baud: u32,
+    /// Parity: 'N' | 'E' | 'O'.
+    pub parity: char,
+    /// Data bits: 7 | 8.
+    pub data_bits: u8,
+    /// Stop bits: 1 | 2.
+    pub stop_bits: u8,
+}
+
+impl Default for SerialParams {
+    fn default() -> Self {
+        Self { port: String::new(), baud: 9600, parity: 'E', data_bits: 8, stop_bits: 1 }
+    }
+}
+
+/// A running serial-RTU slave. The read loop wakes at least every 20 ms, so
+/// [`SerialServer::stop`] takes effect promptly and the OS port is released.
+pub struct SerialServer {
+    stop: Arc<AtomicBool>,
+    /// Human-readable line description, e.g. `COM3 @ 9600 8E1` (status line).
+    pub desc: String,
+}
+
+impl SerialServer {
+    /// Stop the serving loop; the port handle is dropped shortly after.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+
+    pub fn stopped(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+}
+
+fn parity_of(c: char) -> serialport::Parity {
+    match c {
+        'E' => serialport::Parity::Even,
+        'O' => serialport::Parity::Odd,
+        _ => serialport::Parity::None,
+    }
+}
+
+fn data_bits_of(n: u8) -> serialport::DataBits {
+    match n {
+        5 => serialport::DataBits::Five,
+        6 => serialport::DataBits::Six,
+        7 => serialport::DataBits::Seven,
+        _ => serialport::DataBits::Eight,
+    }
+}
+
+fn stop_bits_of(n: u8) -> serialport::StopBits {
+    match n {
+        2 => serialport::StopBits::Two,
+        _ => serialport::StopBits::One,
+    }
+}
+
+fn open_serial(p: &SerialParams) -> std::io::Result<Box<dyn serialport::SerialPort>> {
+    serialport::new(&p.port, p.baud)
+        .data_bits(data_bits_of(p.data_bits))
+        .parity(parity_of(p.parity))
+        .stop_bits(stop_bits_of(p.stop_bits))
+        .timeout(Duration::from_millis(20))
+        .open()
+        .map_err(|e| std::io::Error::other(format!("open {}: {e}", p.port)))
+}
+
+/// Serve Modbus RTU on a physical serial port (USB-RS485 / COM / ttyUSB).
+///
+/// Framing is byte-count based (same shapes as RTU-over-TCP) with a silence
+/// resync: a buffer that stays incomplete for >300 ms, a frame with a bad CRC
+/// or an unknown function byte never wedges the loop — the line keeps working.
+/// The device answers any unit address, like the TCP variants.
+pub fn serve_serial(sim: Sim, p: &SerialParams) -> std::io::Result<SerialServer> {
+    serve_serial_shared(Arc::new(Mutex::new(sim)), p)
+}
+
+/// Like [`serve_serial`], but the device state is shared with the caller
+/// (the mbSCADA slave panel edits registers while masters poll the line).
+pub fn serve_serial_shared(
+    sim: Arc<Mutex<Sim>>,
+    p: &SerialParams,
+) -> std::io::Result<SerialServer> {
+    let port = open_serial(p)?; // fail fast: busy / missing port
+    let stop = Arc::new(AtomicBool::new(false));
+    let desc = format!("{} @ {} {}{}{}", p.port, p.baud, p.data_bits, p.parity, p.stop_bits);
+    let stop2 = Arc::clone(&stop);
+    thread::spawn(move || serial_loop(port, sim, stop2));
+    Ok(SerialServer { stop, desc })
+}
+
+fn serial_loop(
+    mut port: Box<dyn serialport::SerialPort>,
+    sim: Arc<Mutex<Sim>>,
+    stop: Arc<AtomicBool>,
+) {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 512];
+    let mut first_byte: Option<Instant> = None;
+    while !stop.load(Ordering::Relaxed) {
+        match port.read(&mut tmp) {
+            Ok(0) => {}
+            Ok(n) => {
+                if buf.is_empty() {
+                    first_byte = Some(Instant::now());
+                }
+                buf.extend_from_slice(&tmp[..n]);
+            }
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => break, // adapter unplugged / port error — leave the loop
+        }
+        // Silence resync: an incomplete frame older than 300 ms is garbage.
+        if !buf.is_empty() {
+            match first_byte {
+                Some(t0) if t0.elapsed() > Duration::from_millis(300) => {
+                    buf.clear();
+                    first_byte = None;
+                    continue;
+                }
+                None => first_byte = Some(Instant::now()),
+                _ => {}
+            }
+        }
+        let mut replies: Vec<Vec<u8>> = Vec::new();
+        {
+            let mut s = match sim.lock() {
+                Ok(g) => g,
+                Err(_) => break,
+            };
+            process_serial_buf(&mut s, &mut buf, &mut replies);
+        }
+        if buf.is_empty() {
+            first_byte = None;
+        }
+        for out in replies {
+            if port.write_all(&out).is_err() {
+                break;
+            }
+            let _ = port.flush();
+        }
+    }
+}
+
+/// Serve every complete RTU frame buffered so far, pushing raw reply frames.
+/// Resync is byte-wise: a candidate frame whose CRC does not verify is dropped
+/// one byte in, so garbage before a valid frame never blocks it; the same
+/// applies to unknown function bytes. Incomplete input stays for the next read
+/// (and the 300 ms silence guard clears it if the master died mid-frame).
+fn process_serial_buf(sim: &mut Sim, buf: &mut Vec<u8>, replies: &mut Vec<Vec<u8>>) {
+    loop {
+        if buf.is_empty() {
+            return;
+        }
+        match rtu_frame_len(buf) {
+            Some(need) if buf.len() >= need => {
+                // Validate the candidate BEFORE draining: a wrong unit byte in
+                // front of a valid frame shifts the boundaries, and only a CRC
+                // check can tell where the real frame starts.
+                if rtu::parse(&buf[..need]).is_ok() {
+                    let frame: Vec<u8> = buf.drain(..need).collect();
+                    if let Some(out) = handle_frame(sim, &frame, true) {
+                        replies.push(out);
+                    }
+                } else {
+                    buf.drain(..1); // bad CRC — skip one byte and rescan
+                }
+            }
+            Some(_) => return, // incomplete frame — wait for more bytes
+            None => {
+                buf.drain(..1); // unknown function byte — skip and rescan
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,6 +490,82 @@ mod tests {
         server.stop();
         thread::sleep(Duration::from_millis(150));
         assert_eq!(server.clients(), 0);
+    }
+
+    #[test]
+    fn serial_buf_garbage_then_valid_frame() {
+        let mut sim = Sim::new(1);
+        let mut buf = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 2 }.encode();
+        buf.extend(rtu::encode(1, &req));
+        let mut replies = Vec::new();
+        process_serial_buf(&mut sim, &mut buf, &mut replies);
+        assert_eq!(replies.len(), 1, "garbage prefix skipped, frame served");
+        let expect = mb_proto::pdu::decode_response(
+            &rtu::parse(&replies[0]).unwrap().1,
+        ).unwrap();
+        assert_eq!(expect, Response::Registers(vec![0, 0]));
+        assert!(buf.is_empty(), "buffer fully consumed");
+    }
+
+    #[test]
+    fn serial_buf_bad_crc_dropped_next_frame_served() {
+        let mut sim = Sim::new(1);
+        let mut frame = rtu::encode(
+            1,
+            &Request::WriteSingleRegister { addr: 4, value: 77 }.encode(),
+        );
+        let last = frame.len() - 1;
+        frame[last] ^= 0xFF; // corrupt CRC
+        let good = rtu::encode(
+            1,
+            &Request::WriteSingleRegister { addr: 5, value: 88 }.encode(),
+        );
+        let mut buf = frame;
+        buf.extend_from_slice(&good);
+        let mut replies = Vec::new();
+        process_serial_buf(&mut sim, &mut buf, &mut replies);
+        assert_eq!(replies.len(), 1, "bad-CRC frame dropped, good one served");
+        assert_eq!(sim.holding[5], 88, "write after the dropped frame applied");
+        assert!(!sim.holding.iter().any(|&v| v == 77), "corrupted write never applied");
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn serial_buf_incomplete_frame_waits() {
+        let mut sim = Sim::new(1);
+        let frame = rtu::encode(1, &Request::ReadHoldingRegisters { addr: 0, qty: 1 }.encode());
+        let (head, _tail) = frame.split_at(frame.len() - 1);
+        let mut buf = head.to_vec();
+        let mut replies = Vec::new();
+        process_serial_buf(&mut sim, &mut buf, &mut replies);
+        assert!(replies.is_empty(), "incomplete frame not served");
+        assert_eq!(buf.len(), head.len(), "bytes kept for the next read");
+        buf.push(*frame.last().unwrap());
+        process_serial_buf(&mut sim, &mut buf, &mut replies);
+        assert_eq!(replies.len(), 1, "frame served once complete");
+    }
+
+    #[test]
+    fn serial_buf_two_frames_in_one_read() {
+        let mut sim = Sim::new(1);
+        let a = rtu::encode(1, &Request::WriteSingleRegister { addr: 0, value: 10 }.encode());
+        let b = rtu::encode(1, &Request::WriteSingleRegister { addr: 1, value: 20 }.encode());
+        let mut buf = a;
+        buf.extend_from_slice(&b);
+        let mut replies = Vec::new();
+        process_serial_buf(&mut sim, &mut buf, &mut replies);
+        assert_eq!(replies.len(), 2, "both frames served from one read");
+        assert_eq!((sim.holding[0], sim.holding[1]), (10, 20));
+    }
+
+    #[test]
+    fn serve_serial_invalid_port_fails_fast() {
+        let params = SerialParams {
+            port: if cfg!(windows) { "\\\\.\\NOSUCHCOMPORT42" } else { "/dev/mbscada-no-such-port-xyz" }.into(),
+            ..SerialParams::default()
+        };
+        assert!(serve_serial(Sim::new(1), &params).is_err(), "missing port must error, not panic");
     }
 
     #[test]

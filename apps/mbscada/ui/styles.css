@@ -273,6 +273,7 @@ tr.flashrow td { animation: flashfade 0.65s ease-in-out 3; }
   background: #0d1526;
   margin-bottom: 10px;
 }
+.slave-bar[hidden] { display: none; }
 .slave-bar label {
   display: inline-flex;
   align-items: center;
