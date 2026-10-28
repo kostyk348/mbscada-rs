@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mbSCADA — Modbus SCADA in pure Rust</title>
-<meta name="description" content="Clean-room Modbus SCADA in Rust: live polling, byte-exact .mbp/.mbw import, alarm panel, computed tags and operator mimics — in a single ~6 MB executable.">
+<meta name="description" content="Clean-room Modbus SCADA in Rust: live polling, byte-exact .mbp/.mbw import, alarm panel, computed tags, operator mimics and a built-in slave simulator — in a single ~6 MB executable.">
 <meta property="og:title" content="mbSCADA — Modbus SCADA in pure Rust">
-<meta property="og:description" content="Poll Modbus TCP & RTU into live tables, import real Modbus Poll files byte-exactly, watch parameters, compute tags — one ~6 MB binary, RU/EN UI.">
+<meta property="og:description" content="Poll Modbus TCP & RTU into live tables, import real Modbus Poll files byte-exactly, watch parameters, compute tags, emulate slave devices — one ~6 MB binary, RU/EN UI.">
 <meta property="og:image" content="img/app.png">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/png" href="img/favicon.png">
@@ -51,7 +51,7 @@
     <p class="sub" data-i18n="hero.sub"></p>
     <div class="badges">
       <img src="https://img.shields.io/github/v/release/kostyk348/mbscada-rs" alt="release">
-      <img src="https://img.shields.io/badge/tests-68%20passing-22c55e" alt="tests">
+      <img src="https://img.shields.io/badge/tests-72%20passing-22c55e" alt="tests">
       <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
       <img src="https://img.shields.io/badge/rust-1.85%2B-orange" alt="rust">
     </div>
@@ -62,7 +62,7 @@
     <div class="mini-stats">
       <div><b>~6 MB</b><span data-i18n="stat1"></span></div>
       <div><b>5</b><span data-i18n="stat2"></span></div>
-      <div><b>68</b><span data-i18n="stat3"></span></div>
+      <div><b>72</b><span data-i18n="stat3"></span></div>
       <div><b>0</b><span data-i18n="stat4"></span></div>
     </div>
   </div>
@@ -86,6 +86,7 @@
     <article><div class="ico">🧮</div><h3 data-i18n="f7.t"></h3><p data-i18n="f7.d"></p></article>
     <article><div class="ico">🗄️</div><h3 data-i18n="f8.t"></h3><p data-i18n="f8.d"></p></article>
     <article><div class="ico">🌐</div><h3 data-i18n="f9.t"></h3><p data-i18n="f9.d"></p></article>
+    <article><div class="ico">🧪</div><h3 data-i18n="f10.t"></h3><p data-i18n="f10.d"></p></article>
   </div>
 </section>
 
@@ -105,6 +106,10 @@
     <figure>
       <img src="img/watch.png" alt="" loading="lazy">
       <figcaption><b data-i18n="s3.t"></b><span data-i18n="s3.d"></span></figcaption>
+    </figure>
+    <figure>
+      <img src="img/slave.png" alt="" loading="lazy">
+      <figcaption><b data-i18n="s4.t"></b><span data-i18n="s4.d"></span></figcaption>
     </figure>
   </div>
 </section>
@@ -155,6 +160,7 @@ cd mbscada-rs
 cargo build --release -p mbscada</code></pre>
   </div>
   <p class="note" data-i18n="q.note"></p>
+  <p class="note" style="margin-top:-14px"><a href="https://github.com/kostyk348/mbscada-rs/blob/master/docs/guide-slave-ru.md" target="_blank" rel="noopener" data-i18n="q.guide"></a> <span data-i18n="q.guide2"></span></p>
 </section>
 
 <!-- ============ ROADMAP ============ -->
