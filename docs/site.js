@@ -14,7 +14,7 @@ var DICT = {
     "hero.live": "All local — no cloud, no telemetry",
     "hero.title": "Modbus Poll, reimagined — in pure Rust.",
     "hero.sub": "A clean-room Modbus SCADA: poll TCP & RTU devices into live tables, import real Modbus Poll .mbp/.mbw files byte-exactly, style every row with a 32-branch rule tree, build operator mimics and emulate slave devices — in a single ~6 MB executable.",
-    "hero.cta.dl": "⬇ Download v1.4.0",
+    "hero.cta.dl": "⬇ Download v1.4.1",
     "hero.cta.gh": "★ View on GitHub",
 
     "stat1": "single executable",
@@ -67,7 +67,7 @@ var DICT = {
     "a.sim": "Virtual Modbus slaves that hang, corrupt CRC and disconnect — 72 tests pass without a single physical device.",
     "a.app": "The application: Tauri 2 + vanilla JS — no frameworks, no bundler, instant start, ~6 MB binary.",
 
-    "sec.d.title": "Download v1.4.0",
+    "sec.d.title": "Download v1.4.1",
     "sec.d.lead": "Prebuilt installers for every platform — no Rust toolchain needed. Built automatically by GitHub Actions from a v* tag: five runners, one commit, all platforms.",
     "dl.win.t": "Windows 10/11 x64",
     "dl.win.d": "NSIS installer .exe · .msi — WebView2 is preinstalled on Win10/11.",
@@ -112,7 +112,7 @@ var DICT = {
     "hero.live": "Всё локально — без облака и телеметрии",
     "hero.title": "Modbus Poll, переосмысленный — на чистом Rust.",
     "hero.sub": "Clean-room SCADA для Modbus: опрос устройств по TCP и RTU в живые таблицы, byte-exact импорт настоящих файлов Modbus Poll (.mbp/.mbw), дерево правил на 32 ветки, операторская мимика и встроенный симулятор slave-устройств — в одном бинарнике ~6 МБ.",
-    "hero.cta.dl": "⬇ Скачать v1.4.0",
+    "hero.cta.dl": "⬇ Скачать v1.4.1",
     "hero.cta.gh": "★ Смотреть на GitHub",
 
     "stat1": "исполняемый файл",
@@ -165,7 +165,7 @@ var DICT = {
     "a.sim": "Виртуальные слейвы, которые зависают, портят CRC и отваливаются — 72 теста проходят без единого физического устройства.",
     "a.app": "Приложение: Tauri 2 + ванильный JS — без фреймворков и бандлеров, мгновенный старт, бинарник ~6 МБ.",
 
-    "sec.d.title": "Скачать v1.4.0",
+    "sec.d.title": "Скачать v1.4.1",
     "sec.d.lead": "Готовые установщики под все платформы — тулчейн не нужен. Каждый релиз собирается автоматически GitHub Actions из тега v*: пять раннеров, один коммит, все платформы.",
     "dl.win.t": "Windows 10/11 x64",
     "dl.win.d": "Установщик NSIS .exe · .msi — WebView2 уже предустановлен в Win10/11.",
