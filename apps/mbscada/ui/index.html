@@ -204,6 +204,7 @@
         <div class="tabs">
           <div class="tab active" data-view="tables" data-i="tab_tables">Таблицы</div>
           <div class="tab" data-view="schema" data-i="tab_schema">Схема (SCADA)</div>
+          <div class="tab" data-view="slave" data-i="tab_slave">Slave-симулятор</div>
         </div>
 
         <div id="viewTables" class="view">
@@ -225,6 +226,71 @@
             <span class="hint" data-i="schema_hint">перетаскивай мышью · двойной клик — настройка · ✕ удалить</span>
           </div>
           <div id="canvas" class="canvas"></div>
+        </div>
+
+        <!-- In-app slave simulator: the app serves registers as a Modbus device,
+             so the master side (tables above) and the slave side are both local. -->
+        <div id="viewSlave" class="view" hidden>
+          <div class="schema-toolbar">
+            <span class="hint" data-i="slave_hint"></span>
+          </div>
+          <div class="slave-bar">
+            <label><span data-i="sl_port">Порт</span> <input id="slPort" type="number" min="1" max="65535" value="10502" /></label>
+            <label><span data-i="sl_unit">Slave ID</span> <input id="slUnit" type="number" min="0" max="247" value="1" /></label>
+            <label><span data-i="sl_frames">Кадры</span>
+              <select id="slRtu">
+                <option value="tcp">Modbus TCP (MBAP)</option>
+                <option value="rtu">RTU over TCP</option>
+              </select>
+            </label>
+            <button id="slBtnStart" class="primary" data-i="sl_start" data-it="sl_start_title">▶ Запустить slave</button>
+            <button id="slBtnStop" data-i="sl_stop" data-it="sl_stop_title">■ Остановить</button>
+            <span id="slStatus" class="sl-status"></span>
+          </div>
+          <div class="slave-bar">
+            <label><span data-i="sl_area">Область</span>
+              <select id="slArea">
+                <option value="holding">03 Holding</option>
+                <option value="input">04 Input</option>
+                <option value="coils">01 Coils</option>
+                <option value="discrete">02 Discrete</option>
+              </select>
+            </label>
+            <label><span data-i="sl_addr">Адрес</span> <input id="slAddr" type="number" min="0" max="65535" value="0" /></label>
+            <label><span data-i="sl_qty">Кол-во</span> <input id="slQty" type="number" min="1" max="200" value="16" /></label>
+            <label><span data-i="sl_view">Вид</span>
+              <select id="slFmt">
+                <option value="u16">uint16</option>
+                <option value="i16">int16</option>
+                <option value="hex">hex16</option>
+                <option value="u16_swapped">u16 (swap)</option>
+                <option value="u32">uint32</option>
+                <option value="i32">int32</option>
+                <option value="f32_cdab">float CDAB</option>
+                <option value="f32_abcd">float ABCD</option>
+              </select>
+            </label>
+          </div>
+          <div class="slave-bar">
+            <label><span data-i="sl_gen">Автогенерация</span>
+              <select id="slGen">
+                <option value="none" data-i="sl_gen_none">выкл</option>
+                <option value="sine" data-i="sl_gen_sine">синус</option>
+                <option value="ramp" data-i="sl_gen_ramp">пила</option>
+                <option value="noise" data-i="sl_gen_noise">шум</option>
+              </select>
+            </label>
+            <label><span data-i="sl_gen_amp">Ампл.</span> <input id="slGenAmp" type="number" value="100" /></label>
+            <label><span data-i="sl_gen_base">База</span> <input id="slGenBase" type="number" value="0" /></label>
+            <label><span data-i="sl_gen_period">Период, с</span> <input id="slGenPeriod" type="number" value="10" /></label>
+            <span class="hint" data-i="sl_gen_note"></span>
+          </div>
+          <div class="card">
+            <table class="regtable">
+              <thead><tr><th data-i="th_addr">Адрес</th><th data-i="th_value">Значение</th><th data-i="sl_th_raw">Регистры</th></tr></thead>
+              <tbody id="slBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 

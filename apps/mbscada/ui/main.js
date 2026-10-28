@@ -21,6 +21,95 @@ const FMTL = { u16: "u16", i16: "i16", hex: "hex16", bin: "bin16", ascii16: "asc
   u64: "u64", i64: "i64", f64: "f64" };
 const KINDL = { tcp: "TCP", rtu: "Serial", rtu_over_tcp: "RTU/TCP", ascii: "ASCII", ascii_over_tcp: "ASCII/TCP" };
 
+/* --------------------------------------------------- register formats ---- */
+/* JS mirror of crates/mb-engine/src/format.rs: decode/encode register blocks
+   per poll fmt. Powers typed writes (float / 32-bit / swapped words), the
+   per-cell dec/hex/bin display and the slave-panel grid. */
+const FMT_OPTS = Object.entries(FMTL).map(([v, lab]) => `<option value="${v}">${lab}</option>`).join("");
+
+function fmtRegs(fmt) {
+  if (fmt === "u64" || fmt === "i64" || fmt === "f64") return 4;
+  if (fmt === "u32" || fmt === "i32" || fmt === "hex32") return 2;
+  if (fmt && String(fmt).startsWith("f32")) return 2;
+  return 1;
+}
+function swap16(x) { return ((x & 0xff) << 8) | ((x >> 8) & 0xff); }
+
+function f32FromWords(hi, lo) {
+  const dv = new DataView(new ArrayBuffer(4));
+  dv.setUint16(0, hi); dv.setUint16(2, lo);
+  return dv.getFloat32(0);
+}
+
+function regDecode(regs, fmt) {
+  const f = fmt || "u16";
+  const r = (i) => Number(regs[i]) || 0;
+  const w32 = (a, b) => (((a << 16) | b) >>> 0);
+  switch (f) {
+    case "i16": return [(r(0) << 16) >> 16];
+    case "u16_swapped": return [swap16(r(0))];
+    case "u32": case "hex32": return [w32(r(0), r(1))];
+    case "i32": return [(w32(r(0), r(1)) | 0)];
+    case "f32_abcd": return [f32FromWords(r(0), r(1))];
+    case "f32_cdab": return [f32FromWords(r(1), r(0))];
+    case "f32_badc": return [f32FromWords(swap16(r(0)), swap16(r(1)))];
+    case "f32_dcba": return [f32FromWords(swap16(r(1)), swap16(r(0)))];
+    case "u64": case "i64": case "f64": {
+      const dv = new DataView(new ArrayBuffer(8));
+      dv.setUint16(0, r(0)); dv.setUint16(2, r(1)); dv.setUint16(4, r(2)); dv.setUint16(6, r(3));
+      if (f === "f64") return [dv.getFloat64(0)];
+      const bits = dv.getBigUint64(0);
+      return [Number(f === "i64" ? BigInt.asIntN(64, bits) : bits)];
+    }
+    default: return [r(0)]; // u16 / hex / bin / ascii16
+  }
+}
+
+function regEncode(value, fmt) {
+  const f = fmt || "u16";
+  const w32 = (bits) => [((Number(bits) >>> 16) & 0xffff), (Number(bits) & 0xffff)];
+  switch (f) {
+    case "i16": return [(Math.round(Number(value)) << 16) >> 16 & 0xffff];
+    case "u16_swapped": return [swap16(Math.round(Number(value)) & 0xffff)];
+    case "u32": return w32(Math.trunc(Number(value)) >>> 0);
+    case "i32": return w32(Math.trunc(Number(value)) | 0);
+    case "hex32": return w32(Number(value) >>> 0); // Number("0xDEADBEEF") parses
+    case "f32_abcd": case "f32_cdab": case "f32_badc": case "f32_dcba": {
+      const dv = new DataView(new ArrayBuffer(4));
+      dv.setFloat32(0, Number(value));
+      const b = [dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)];
+      const w = (hi, lo) => (((hi << 8) | lo) & 0xffff);
+      if (f === "f32_abcd") return [w(b[0], b[1]), w(b[2], b[3])];
+      if (f === "f32_cdab") return [w(b[2], b[3]), w(b[0], b[1])];
+      if (f === "f32_badc") return [w(b[1], b[0]), w(b[3], b[2])];
+      return [w(b[3], b[2]), w(b[1], b[0])];
+    }
+    case "u64": case "i64": case "f64": {
+      const dv = new DataView(new ArrayBuffer(8));
+      if (f === "f64") dv.setFloat64(0, Number(value));
+      else {
+        let x = BigInt(Math.round(Number(value)));
+        if (f === "i64") x = BigInt.asUintN(64, x);
+        dv.setBigUint64(0, x & 0xFFFFFFFFFFFFFFFFn);
+      }
+      return [dv.getUint16(0), dv.getUint16(2), dv.getUint16(4), dv.getUint16(6)];
+    }
+    case "ascii16": {
+      const s = String(value ?? "").padEnd(2).slice(0, 2);
+      return [(((s.charCodeAt(0) & 0xff) << 8) | (s.charCodeAt(1) & 0xff))];
+    }
+    case "hex": case "hex16": return [Number(value) & 0xffff];   // Number("0x1F") parses
+    case "bin": case "bin16": return [Number(value) & 0xffff];   // Number("0b101") parses
+    default: return [Math.round(Number(value)) & 0xffff];
+  }
+}
+
+function regBitsText(regs, kind) {
+  const rs = (regs && regs.length ? regs : [0]).map((x) => Number(x) || 0);
+  if (kind === "hex") return "0x" + rs.map((x) => x.toString(16).padStart(4, "0")).join("").toUpperCase();
+  return rs.map((x) => x.toString(2).padStart(16, "0")).join(" ");
+}
+
 /* ------------------------------------------------------------ sparklines -- */
 /* Per-row value history + inline SVG polyline. Lives only in this session.  */
 const SPARK_N = 40;
@@ -188,6 +277,7 @@ function endCalcEdit() {
 
 function renderCalcList() {
   const box = $("calcList");
+  if (!sigChanged("calcs", [window.LANG, cfg.computed, editingCalc ? cfg.computed.indexOf(editingCalc) : -1])) return;
   if (!box) return;
   box.innerHTML = "";
   if (!(cfg.computed || []).length) { box.innerHTML = `<div class="empty">${esc(t("calc_none"))}</div>`; return; }
@@ -250,7 +340,15 @@ function updateAlarms() {
   }
 }
 
+function alarmsSig() {
+  return JSON.stringify([window.LANG,
+    Object.values(AL.active).map((a) => [a.key, a.ack, a.level, a.display, a.msg, a.quality, a.since, a.poll, a.disp]),
+    AL.hist.length,
+    AL.hist.map((a) => [a.key, a.since, a.cleared])]);
+}
+
 function renderAlarms() {
+  if (!sigChanged("alarms", alarmsSig())) return;
   const badge = $("alarmBadge");
   if (badge) {
     const unacked = Object.values(AL.active).filter((a) => !a.ack).length;
@@ -516,6 +614,7 @@ async function boot() {
   if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
   if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
   watchCfg();
+  slaveCfg();
   window.LANG = window.i18nLang();
   const ls = $("langSel");
   if (ls) {
@@ -673,6 +772,7 @@ async function refresh() {
       await csvMaybeAppend(pollsForCsv, snap.computed || []);
     }
     render();
+    slaveTick();
   } catch (e) { footer(t("err_prefix") + e, true); }
 }
 
@@ -714,6 +814,7 @@ function renderChips() {
   const views = snap && snap.connections.length
     ? snap.connections.map((c) => ({ name: c.name, describe: c.describe, online: c.stats.online, err: c.stats.last_error }))
     : cfg.connections.map((c) => ({ name: c.name, describe: describe(c), online: false, err: "" }));
+  if (!sigChanged("chips", [window.LANG, views])) return;
   box.innerHTML = "";
   for (const v of views) {
     const el = document.createElement("div");
@@ -727,6 +828,7 @@ function renderChips() {
 
 function renderConnList() {
   const box = $("connList");
+  if (!sigChanged("conns", [window.LANG, cfg.connections.map((c) => [c.id, c.name, describe(c)]), editingConn ? editingConn.id : null])) return;
   box.innerHTML = "";
   if (!cfg.connections.length) { box.innerHTML = `<div class="empty">${esc(t("add_conn_first"))}</div>`; return; }
   cfg.connections.forEach((c, i) => {
@@ -745,6 +847,9 @@ function renderConnList() {
 
 function renderPollList() {
   const box = $("pollList");
+  if (!sigChanged("polls", [window.LANG,
+    cfg.polls.map((p) => [p.id, p.name, p.func, p.raw_start != null ? p.raw_start : p.start, p.qty, p.slave, p.fmt, p.scan_ms, p.conn_id, p.labels ? Object.keys(p.labels).length : 0]),
+    editingPoll ? editingPoll.id : null])) return;
   box.innerHTML = "";
   if (!cfg.polls.length) { box.innerHTML = `<div class="empty">${esc(t("add_poll_first"))}</div>`; return; }
   cfg.polls.forEach((p, i) => {
@@ -765,6 +870,9 @@ function renderPollList() {
 
 function renderRuleList() {
   const box = $("ruleList");
+  if (!sigChanged("rules", [window.LANG,
+    cfg.rules.map((r) => [r.id, r.poll, r.offset, JSON.stringify(r.cond), r.fg, r.bg, r.blink, r.severity, r.message, r.text]),
+    editingRule ? editingRule.id : null])) return;
   box.innerHTML = "";
   if (!cfg.rules.length) { box.innerHTML = `<div class="empty">${esc(t("no_rules"))}</div>`; return; }
   // Номер ветки внутри своего регистра: 1..32 (первая сработавшая выигрывает).
@@ -830,8 +938,66 @@ function endRuleEdit() {
   $("btnRuleCancel").hidden = true;
 }
 
+/* ------------------------------------------------- tables grid (live) ---- */
+/* The grid updates in place: a full DOM rebuild happens only when the table
+   structure changes (polls / fmt / row set / language); value cells are
+   patched every tick. Stable <tr> nodes are what fixed the flaky
+   double-clicks and the 300 ms lag. */
+const GRID = { sig: null, cards: new Map(), comp: null };
+
+function gridSig() {
+  const computed = (snap && snap.computed) || [];
+  const polls = snap && snap.polls.length ? snap.polls : cfg.polls;
+  return JSON.stringify([
+    window.LANG,
+    computed.map((c) => c.name + "\u0001" + c.expr),
+    polls.map((p) => [p.id, p.name, p.fmt, p.start, p.qty, p.func,
+      (p.rows && p.rows.length ? p.rows : synthRows(p)).map((r) => r.addr)]),
+  ]);
+}
+
+function dispModeOf(pollId, addr) {
+  const key = pollId + ":" + addr;
+  return (cfg.rowDisp && cfg.rowDisp[key]) ||
+    (cfg.dispMode && cfg.dispMode[pollId]) || "dec";
+}
+
+function cycleRowDisp(pollId, addr) {
+  if (!cfg.rowDisp) cfg.rowDisp = {};
+  const key = pollId + ":" + addr;
+  const cur = dispModeOf(pollId, addr);
+  const next = cur === "dec" ? "hex" : cur === "hex" ? "bin" : "dec";
+  if (next === "dec") delete cfg.rowDisp[key];
+  else cfg.rowDisp[key] = next;
+  updateGridTick(true);
+}
+
+// Value text for one row in the requested display mode (dec / hex / bin).
+// hex/bin show the raw bits of the value's registers (independent of fmt).
+function rowDispText(cfgP, r, mode) {
+  if (mode === "hex") return regBitsText(r.regs, "hex");
+  if (mode === "bin") return regBitsText(r.regs, "bin");
+  if (cfgP && (cfgP.func === 1 || cfgP.func === 2)) return r.display; // ON/OFF
+  const s = (r.scaled != null) ? r.scaled : r.value;
+  const fmt = cfgP && cfgP.fmt;
+  if (fmt && (String(fmt).startsWith("f32") || fmt === "f64")) return String(Math.round(s * 1000) / 1000);
+  return String(Math.round(s * 100) / 100);
+}
+
 function renderGrid() {
   const grid = $("grid");
+  if (!grid) return;
+  const sig = gridSig();
+  if (sig !== GRID.sig) {
+    GRID.sig = sig;
+    GRID.cards.clear();
+    buildGrid(grid);
+    return;
+  }
+  updateGridTick(false);
+}
+
+function buildGrid(grid) {
   grid.innerHTML = "";
   const computed = (snap && snap.computed) || [];
   if (computed.length) grid.appendChild(computedCard(computed));
@@ -848,7 +1014,28 @@ function renderGrid() {
     const connTxt = cn ? esc(cn.name) : `<span class="bad">${esc(t("no_conn"))}</span>`;
     head.innerHTML = `<h2>${esc(p.name)}</h2>
       <span class="meta">${FUNC[p.func] || p.func} · @${p.start}×${p.qty} · slave ${p.slave} · ${p.scan_ms}${t("ms")} · ${FMTL[p.fmt] || p.fmt} · ${connTxt}</span>
-      <span class="stat">${p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " " + t("ms") : ""}</span>`;
+      <span class="stat"></span>`;
+    // Quick data-type switch (like Modbus Poll Number Type) — one click right
+    // after the import; rows = qty / registers-per-value.
+    const fs = document.createElement("select");
+    fs.className = "fmtsel";
+    fs.title = t("fmt_hint");
+    fs.innerHTML = FMT_OPTS;
+    fs.value = p.fmt;
+    fs.onchange = () => { const cp = findCfgPoll(p.id); if (cp) { cp.fmt = fs.value; apply(); } };
+    head.appendChild(fs);
+    // Default display format for the poll's values (per-cell override: ПКМ).
+    const ds = document.createElement("select");
+    ds.className = "fmtsel";
+    ds.title = t("disp_mode_title");
+    ds.innerHTML = `<option value="dec">${t("disp_dec")}</option><option value="hex">${t("disp_hex")}</option><option value="bin">${t("disp_bin")}</option>`;
+    ds.value = cfg.dispMode && cfg.dispMode[p.id] ? cfg.dispMode[p.id] : "dec";
+    ds.onchange = () => {
+      if (!cfg.dispMode) cfg.dispMode = {};
+      if (ds.value === "dec") delete cfg.dispMode[p.id]; else cfg.dispMode[p.id] = ds.value;
+      updateGridTick(true);
+    };
+    head.appendChild(ds);
     card.appendChild(head);
 
     const table = document.createElement("table");
@@ -856,28 +1043,28 @@ function renderGrid() {
     table.innerHTML = `<thead><tr><th>${t("th_addr")}</th><th>${t("th_name")}</th><th>${t("th_value")}</th><th>${t("th_trend")}</th><th>${t("th_unit")}</th><th>${t("th_quality")}</th><th>${t("th_alarm")}</th></tr></thead>`;
     const tb = document.createElement("tbody");
     const rows = (p.rows && p.rows.length) ? p.rows : synthRows(cfgById[p.id] || p);
+    const rec = { stat: head.querySelector(".stat"), rows: new Map(), data: new Map(), cells: new Map() };
     for (const r of rows) {
+      const rowKey = p.id + ":" + r.addr;
       const tr = document.createElement("tr");
       tr.className = "row" + (r.blink ? " blink" : "");
-      const rowKey = p.id + ":" + r.addr;
       tr.dataset.key = rowKey;
-      // Подсветка строки, к которой перешли из панели аварий.
-      if (JUMP.key === rowKey && Date.now() < JUMP.until) {
-        tr.classList.add("flashrow");
-        if (!JUMP.scrolled) {
-          JUMP.scrolled = true;
-          setTimeout(() => tr.scrollIntoView({ block: "center", behavior: "smooth" }), 0);
-        }
-      }
-      if (r.fg) tr.style.color = r.fg;
-      if (r.bg) tr.style.background = r.bg;
+      const mode = dispModeOf(p.id, r.addr);
       const alarm = r.alarm_level && r.alarm_level !== "ok" ? "⚠ " + esc(r.alarm_msg || r.alarm_level) : "";
-      const spark = sparkline(p.id, r, r.display);
+      const spark = sparkline(p.id, r, String(r.scaled != null ? r.scaled : r.raw));
       tr.innerHTML = `<td class="mono">${r.disp_addr}</td><td>${esc(r.name)}</td>
-        <td class="mono"><b>${esc(r.display)}</b></td><td>${spark}</td><td>${esc(r.unit)}</td>
+        <td class="mono"><b>${esc(rowDispText(cfgById[p.id] || p, r, mode))}</b></td><td>${spark}</td><td>${esc(r.unit)}</td>
         <td class="${r.quality}">${r.quality}</td><td>${alarm}</td>`;
       tr.title = t("row_write_hint");
       tr.onclick = () => writeRow(p, r);
+      // ПКМ по значению — цикл dec → hex → bin для этой ячейки.
+      tr.children[2].title = t("disp_hint");
+      tr.children[2].oncontextmenu = (ev) => { ev.preventDefault(); cycleRowDisp(p.id, r.addr); };
+      rec.rows.set(rowKey, tr);
+      rec.cells.set(rowKey, {
+        val: tr.children[2].firstChild, name: tr.children[1], spark: tr.children[3],
+        q: tr.children[5], al: tr.children[6],
+      });
       tb.appendChild(tr);
     }
     if (!rows.length) {
@@ -888,6 +1075,66 @@ function renderGrid() {
     table.appendChild(tb);
     card.appendChild(table);
     grid.appendChild(card);
+    GRID.cards.set(p.id, rec);
+  }
+}
+
+// Per-tick in-place update of every row cell (no DOM replacement at all).
+function updateGridTick() {
+  const cfgById = {};
+  cfg.polls.forEach((q) => { cfgById[q.id] = q; });
+  const polls = snap && snap.polls.length ? snap.polls : cfg.polls;
+  for (const p of polls) {
+    const rec = GRID.cards.get(p.id);
+    if (!rec) { GRID.sig = null; renderGrid(); return; }
+    const cfgP = cfgById[p.id] || p;
+    const rows = (p.rows && p.rows.length) ? p.rows : synthRows(cfgP);
+    for (const r of rows) {
+      const rowKey = p.id + ":" + r.addr;
+      const tr = rec.rows.get(rowKey);
+      const cell = rec.cells.get(rowKey);
+      if (!tr || !cell) { GRID.sig = null; renderGrid(); return; }
+      rec.data.set(rowKey, { p: cfgP, r });
+      tr.classList.toggle("blink", !!r.blink);
+      if (JUMP.key === rowKey && Date.now() < JUMP.until) {
+        tr.classList.add("flashrow");
+        if (!JUMP.scrolled) {
+          JUMP.scrolled = true;
+          setTimeout(() => tr.scrollIntoView({ block: "center", behavior: "smooth" }), 0);
+        }
+      } else {
+        tr.classList.remove("flashrow");
+      }
+      if (r.fg) tr.style.color = r.fg; else tr.style.color = "";
+      if (r.bg) tr.style.background = r.bg; else tr.style.background = "";
+      cell.val.textContent = rowDispText(cfgP, r, dispModeOf(p.id, r.addr));
+      cell.name.textContent = r.name;
+      cell.spark.innerHTML = sparklineSvgOnly(p.id, r);
+      cell.q.textContent = r.quality;
+      cell.q.className = r.quality;
+      cell.al.textContent = r.alarm_level && r.alarm_level !== "ok" ? "⚠ " + (r.alarm_msg || r.alarm_level) : "";
+    }
+    if (rec.stat) rec.stat.textContent = p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " " + t("ms") : "";
+  }
+  updateComputedTick();
+}
+
+function sparklineSvgOnly(pollId, r) {
+  const key = pushSpark(pollId, r, String(r.scaled != null ? r.scaled : r.raw));
+  return sparkLineSvg(SPARK_HIST[key]);
+}
+
+function updateComputedTick() {
+  const computed = (snap && snap.computed) || [];
+  const cc = GRID.comp;
+  if (!cc) return;
+  for (const c of computed) {
+    const ref = cc.rows.get(c.name);
+    if (!ref) continue;
+    ref.val.innerHTML = `${esc(c.display)}${c.ok ? "" : ' <span class="calc-err">⚠</span>'}`;
+    ref.expr.innerHTML = `${esc(c.expr)}${c.ok ? "" : " — " + esc(c.err)}`;
+    ref.expr.className = "mono " + (c.ok ? "sub" : "calc-err");
+    ref.tr.title = c.ok ? "" : (c.err || "");
   }
 }
 
@@ -904,6 +1151,7 @@ function computedCard(computed) {
   table.className = "regtable";
   table.innerHTML = `<thead><tr><th>${t("th_name")}</th><th>${t("th_value")}</th><th>${t("th_unit")}</th><th>${t("f_expr")}</th></tr></thead>`;
   const tb = document.createElement("tbody");
+  const rec = { rows: new Map() };
   for (const c of computed) {
     const tr = document.createElement("tr");
     tr.className = "calc-row";
@@ -912,17 +1160,31 @@ function computedCard(computed) {
       <td class="mono"><b>${esc(c.display)}</b>${c.ok ? "" : ' <span class="calc-err">⚠</span>'}</td>
       <td>${esc(c.unit || "")}</td>
       <td class="mono ${c.ok ? "sub" : "calc-err"}">${esc(c.expr)}${c.ok ? "" : " — " + esc(c.err)}</td>`;
+    rec.rows.set(c.name, { tr, val: tr.children[1], expr: tr.children[3] });
     tb.appendChild(tr);
   }
   table.appendChild(tb);
   card.appendChild(table);
+  GRID.comp = rec;
   return card;
+}
+
+// Cheap signatures: skip DOM work when nothing visible changed.
+const SIGS = {};
+function sigChanged(key, val) {
+  const s = JSON.stringify(val);
+  if (SIGS[key] === s) return false;
+  SIGS[key] = s;
+  return true;
 }
 
 function renderStats() {
   const box = $("stats");
-  box.innerHTML = "";
   const conns = snap ? snap.connections : [];
+  // «N с назад» тикают посекундно — обновляем раз в секунду, не каждый тик.
+  const secs = snap ? Math.floor(Number(snap.ts_ms) / 1000) : 0;
+  if (!sigChanged("stats", [window.LANG, secs, conns, (snap ? snap.polls : []).map((p) => [p.id, p.stats, p.last_poll_ms])])) return;
+  box.innerHTML = "";
   if (!conns.length) { box.innerHTML = `<div class="empty">—</div>`; return; }
   const ago = (ts) => ts ? tfmt("ago", { s: Math.max(0, Math.round((snap.ts_ms - ts) / 1000)) }) : "—";
   for (const c of conns) {
@@ -948,16 +1210,39 @@ function renderStats() {
 
 function renderLog() {
   const box = $("log");
-  box.innerHTML = "";
   const log = snap ? snap.log : [];
-  if (!log.length) { box.innerHTML = `<div class="empty">—</div>`; return; }
-  for (const e of log.slice(0, 150)) {
-    const el = document.createElement("div");
-    el.className = "e " + (e.ok ? "" : "bad");
-    el.innerHTML = `<span class="dir">${e.time}</span><span class="dir">${e.dir}</span> ${esc(e.text)}`;
-    box.appendChild(el);
+  const ent = (e) => e.time + "\u0001" + e.dir + "\u0001" + e.text;
+  const top = log.length ? ent(log[0]) : "";
+  if (!LOGR.n) {
+    box.innerHTML = "";
+    for (const e of log.slice(0, 150)) appendLogLine(box, e);
+    LOGR.n = Math.min(log.length, 150); LOGR.top = top;
+    return;
   }
+  if (log.length >= LOGR.n && top === LOGR.top) return; // ничего нового
+  const knownIdx = log.slice(0, 80).findIndex((e) => ent(e) === LOGR.top);
+  if (log.length < LOGR.n || knownIdx === -1) {
+    // рестарт движка / слишком большой сдвиг — полная перерисовка
+    box.innerHTML = "";
+    for (const e of log.slice(0, 150)) appendLogLine(box, e);
+    LOGR.n = Math.min(log.length, 150); LOGR.top = top;
+    return;
+  }
+  // Дописываем только новые записи сверху (новые идут первыми).
+  const frag = document.createDocumentFragment();
+  for (const e of log.slice(0, knownIdx)) appendLogLine(frag, e);
+  box.insertBefore(frag, box.firstChild);
+  while (box.children.length > 150) box.removeChild(box.lastChild);
+  LOGR.n = Math.min(log.length, 150); LOGR.top = top;
 }
+
+function appendLogLine(frag, e) {
+  const el = document.createElement("div");
+  el.className = "e " + (e.ok ? "" : "bad");
+  el.innerHTML = `<span class="dir">${e.time}</span><span class="dir">${e.dir}</span> ${esc(e.text)}`;
+  frag.appendChild(el);
+}
+const LOGR = { n: 0, top: "" };
 
 function fillSelectors() {
   const conns = cfg.connections;
@@ -976,9 +1261,7 @@ function fillSelectors() {
   }
 }
 
-function stepOf(fmt) {
-  return (fmt && (String(fmt).startsWith("f32") || fmt === "u32" || fmt === "i32")) ? 2 : 1;
-}
+function stepOf(fmt) { return fmtRegs(fmt); }
 function applyAddrMode(mode) {
   for (const p of cfg.polls) {
     const raw = (p.raw_start != null) ? p.raw_start : p.start;
@@ -1068,12 +1351,33 @@ async function stopPolling() {
 
 async function writeRow(poll, row) {
   if (!hasTauri) return;
+  const cfgP = findCfgPoll(poll.id) || poll;
+  const fmt = cfgP.fmt || "u16";
+  if (Number(poll.func) === 4) { footer(t("wr_input_ro"), true); return; }
+  const isBits = Number(poll.func) === 1 || Number(poll.func) === 2;
+  const regs0 = row.regs && row.regs.length ? row.regs : [row.raw];
+  // Текущее значение — в том виде, в котором его удобно ввести:
+  // float/32-бит — инженерное значение, hex/bin — биты регистров.
+  const cur = isBits ? (row.raw ? "1" : "0")
+    : (fmt === "hex" || fmt === "hex16") ? regBitsText(regs0, "hex")
+    : (fmt === "hex32") ? regBitsText(regs0, "hex")
+    : (fmt === "bin" || fmt === "bin16") ? regBitsText(regs0, "bin")
+    : (fmt === "ascii16") ? String.fromCharCode((row.raw >> 8) & 0xff, row.raw & 0xff)
+    : String(row.scaled != null ? row.scaled : (row.value != null ? row.value : row.raw));
   openValueModal(
-    tfmt("write_title", { func: FUNC[poll.func] || poll.func, addr: row.disp_addr, name: row.name, cur: row.display }),
-    row.raw,
+    tfmt("write_title", { func: FUNC[poll.func] || poll.func, addr: row.disp_addr, name: row.name, cur }) + " [" + (FMTL[fmt] || fmt) + "]",
+    cur,
     async (val) => {
       try {
-        await invoke("write_value", { pollId: poll.id, addr: row.addr, value: Number(val) & 0xffff });
+        if (isBits) {
+          await invoke("write_value", { pollId: poll.id, addr: row.addr, value: Number(val) ? 1 : 0 });
+        } else {
+          // regEncode пакует значение в регистры по fmt (float -> 2 регистра
+          // с учётом порядка слов, i16 -> допкод, hex/bin — парсит префиксы).
+          const regs = regEncode(val, fmt);
+          if (regs.length === 1) await invoke("write_value", { pollId: poll.id, addr: row.addr, value: regs[0] });
+          else await invoke("write_multi", { pollId: poll.id, addr: row.addr, values: regs });
+        }
         refresh();
       } catch (e) { footer(String(e), true); }
     }
@@ -1141,6 +1445,7 @@ async function loadProject() {
     if (!cfg.archive) cfg.archive = { enabled: false, path: "", interval_s: 5, all_values: false };
     if (!Array.isArray(cfg.mimic)) cfg.mimic = [];
     watchCfg();
+    slaveCfg();
     await apply();
     footer(t("loaded") + sel[0]);
   } catch (e) { footer(String(e), true); }
@@ -1274,6 +1579,30 @@ function wireForms() {
   const am = $("addrMode");
   if (am) am.onchange = () => { applyAddrMode(am.value); apply(); };
 
+  // Slave-симулятор: старт/стоп + сохранение настроек в проекте.
+  const sbs = $("slBtnStart");
+  if (sbs) sbs.onclick = slaveStart;
+  const sbp = $("slBtnStop");
+  if (sbp) sbp.onclick = slaveStop;
+  const slaveFields = [
+    ["slPort", "port", Number], ["slUnit", "unit", Number], ["slRtu", "rtu", null],
+    ["slArea", "area", null], ["slAddr", "addr", Number], ["slQty", "qty", Number],
+    ["slFmt", "fmt", null], ["slGen", "gen", null],
+    ["slGenAmp", "genAmp", Number], ["slGenBase", "genBase", Number], ["slGenPeriod", "genPeriod", Number],
+  ];
+  for (const [id, key, cast] of slaveFields) {
+    const el = $(id);
+    if (!el) continue;
+    el.onchange = () => {
+      const g = slaveCfg();
+      g[key] = cast ? cast(el.value) : (key === "rtu" ? el.value === "rtu" : el.value);
+      if (["area", "addr", "qty", "fmt"].includes(key)) {
+        SLV.gridSig = null;
+        if (SLV.running) slaveRefreshNow();
+      }
+    };
+  }
+
   document.querySelectorAll(".tab").forEach((t) => {
     t.onclick = () => {
       document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
@@ -1281,7 +1610,9 @@ function wireForms() {
       const v = t.dataset.view;
       $("viewTables").hidden = v !== "tables";
       $("viewSchema").hidden = v !== "schema";
+      if ($("viewSlave")) $("viewSlave").hidden = v !== "slave";
       if (v === "schema") renderSchema();
+      if (v === "slave") { slaveSyncForm(); renderSlaveStatus(); slaveRefreshNow(); }
     };
   });
   const addBtn = $("wAdd");
@@ -1414,10 +1745,211 @@ function wireForms() {
   };
 }
 
+/* ------------------------------------------------------ slave simulator -- */
+/* The app answers as a Modbus device (mb-sim on a TCP port), so the master
+   side (the tables) and the slave side are both local. The register grid
+   edits the slave's data model live; the auto-generator animates it. */
+const SLV = { running: false, addr: "", unit: 1, rtu: false, clients: 0, gridSig: null };
+
+function slaveCfg() {
+  if (!cfg.slave || typeof cfg.slave !== "object") cfg.slave = {};
+  const g = cfg.slave;
+  if (g.port == null) g.port = 10502;
+  if (g.unit == null) g.unit = 1;
+  if (g.rtu == null) g.rtu = false;
+  if (!g.area) g.area = "holding";
+  if (g.addr == null) g.addr = 0;
+  if (g.qty == null) g.qty = 16;
+  if (!g.fmt) g.fmt = "u16";
+  if (!g.gen) g.gen = "none";
+  if (g.genAmp == null) g.genAmp = 100;
+  if (g.genBase == null) g.genBase = 0;
+  if (g.genPeriod == null) g.genPeriod = 10;
+  return g;
+}
+
+function slaveSyncForm() {
+  const g = slaveCfg();
+  const map = {
+    slPort: "port", slUnit: "unit", slRtu: "rtu", slArea: "area", slAddr: "addr",
+    slQty: "qty", slFmt: "fmt", slGen: "gen", slGenAmp: "genAmp",
+    slGenBase: "genBase", slGenPeriod: "genPeriod",
+  };
+  for (const [id, key] of Object.entries(map)) {
+    const el = $(id);
+    if (!el) continue;
+    el.value = key === "rtu" ? (g.rtu ? "rtu" : "tcp") : String(g[key]);
+  }
+}
+
+function renderSlaveStatus() {
+  const el = $("slStatus");
+  if (el) {
+    el.innerHTML = SLV.running
+      ? `<b class="good">✓ ${esc(SLV.addr)}</b> · Slave ${esc(String(SLV.unit))} · ${SLV.rtu ? "RTU/TCP" : "TCP"} · ${esc(t("sl_clients"))}: ${SLV.clients}`
+      : `<span class="sub">${esc(t("sl_off"))}</span>`;
+  }
+  const b1 = $("slBtnStart"), b2 = $("slBtnStop");
+  if (b1) b1.disabled = SLV.running;
+  if (b2) b2.disabled = !SLV.running;
+}
+
+async function slaveStart() {
+  if (!hasTauri) { footer(t("sl_need_app"), true); return; }
+  const g = slaveCfg();
+  try {
+    const st = await invoke("slave_start", {
+      port: Math.max(1, Math.min(65535, Number(g.port) || 10502)),
+      unit: Math.max(0, Math.min(247, Number(g.unit) || 1)),
+      rtu: !!g.rtu,
+    });
+    SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
+    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    renderSlaveStatus();
+    footer(t("sl_started") + st.addr);
+    slaveReadAndFill();
+  } catch (e) { footer(String(e), true); }
+}
+
+async function slaveStop() {
+  if (!hasTauri) { footer(t("sl_need_app"), true); return; }
+  try { await invoke("slave_stop"); } catch { /* уже остановлен */ }
+  SLV.running = false; SLV.clients = 0;
+  renderSlaveStatus();
+  footer(t("sl_stopped"));
+}
+
+// Called from the refresh tick: status + generator + (on the tab) the grid.
+async function slaveTick() {
+  if (!hasTauri) return;
+  const view = $("viewSlave");
+  const vis = view && !view.hidden;
+  if (!vis && !SLV.running) return;
+  try {
+    const st = await invoke("slave_status");
+    SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
+    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    if (SLV.running) slaveGen();
+    if (vis) { renderSlaveStatus(); await slaveReadAndFill(); }
+  } catch { /* приложение закрывается */ }
+}
+
+async function slaveRefreshNow() {
+  if (!hasTauri) return;
+  try {
+    const st = await invoke("slave_status");
+    SLV.running = st.running; SLV.addr = st.addr; SLV.unit = st.unit;
+    SLV.rtu = st.rtu; SLV.clients = st.clients;
+    renderSlaveStatus();
+    await slaveReadAndFill();
+  } catch (e) { footer(String(e), true); }
+}
+
+// Автогенерация значений (синус/пила/шум) в выбранной области — мастеры
+// (внешние и сам мастер этого приложения) видят «живое устройство».
+function slaveGen() {
+  const g = slaveCfg();
+  if (g.gen === "none" || !SLV.running) return;
+  const qty = Math.max(1, Math.min(200, Number(g.qty) || 16));
+  const start = Math.max(0, Math.min(65535, Number(g.addr) || 0));
+  const isBits = g.area === "coils" || g.area === "discrete";
+  const amp = Number(g.genAmp) || 0;
+  const base = Number(g.genBase) || 0;
+  const period = Math.max(1, Number(g.genPeriod) || 10);
+  const t = Date.now() / 1000;
+  const vals = [];
+  for (let i = 0; i < qty; i++) {
+    let v;
+    if (g.gen === "sine") v = base + amp * Math.sin((t / period) * 2 * Math.PI + i * 0.35);
+    else if (g.gen === "ramp") v = base + ((t % period) / period) * amp;
+    else v = base + Math.random() * amp;
+    vals.push(isBits
+      ? (amp > 0 && (v - base) / amp > 0.5 ? 1 : 0)
+      : Math.max(0, Math.min(65535, Math.round(v))));
+  }
+  invoke("slave_write", { area: g.area, start, values: vals }).catch(() => {});
+}
+
+async function slaveReadAndFill() {
+  const g = slaveCfg();
+  const body = $("slBody");
+  if (!body) return;
+  const qty = Math.max(1, Math.min(200, Number(g.qty) || 16));
+  const start = Math.max(0, Math.min(65535, Number(g.addr) || 0));
+  const isBits = g.area === "coils" || g.area === "discrete";
+  const sig = [g.area, start, qty, g.fmt, window.LANG].join("|");
+  if (sig !== SLV.gridSig) {
+    SLV.gridSig = sig;
+    buildSlaveGrid(body, g, start, qty, isBits);
+  }
+  try {
+    const regs = await invoke("slave_read", { area: g.area, start, qty });
+    fillSlaveGrid(body, g, start, qty, isBits, regs);
+  } catch { /* slave остановили посреди тика */ }
+}
+
+function slaveStep(g, isBits) { return isBits ? 1 : fmtRegs(g.fmt); }
+
+function buildSlaveGrid(body, g, start, qty, isBits) {
+  const step = slaveStep(g, isBits);
+  const nRows = Math.max(1, Math.ceil(qty / step));
+  body.innerHTML = "";
+  for (let i = 0; i < nRows; i++) {
+    const addr = start + i * step;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono">${addr}</td><td></td><td class="mono sub"></td>`;
+    const valTd = tr.children[1], rawTd = tr.children[2];
+    if (isBits) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.onchange = async () => {
+        try { await invoke("slave_write", { area: g.area, start: addr, values: [cb.checked ? 1 : 0] }); }
+        catch (e) { footer(String(e), true); }
+      };
+      valTd.appendChild(cb);
+      tr._input = cb;
+    } else {
+      const inp = document.createElement("input");
+      inp.className = "slin";
+      inp.title = t("row_write_hint");
+      inp.onchange = async () => {
+        try {
+          const regs = regEncode(inp.value, g.fmt);
+          await invoke("slave_write", { area: g.area, start: addr, values: regs });
+          slaveReadAndFill();
+        } catch (e) { footer(String(e), true); }
+      };
+      valTd.appendChild(inp);
+      tr._input = inp;
+    }
+    tr._rawTd = rawTd;
+    body.appendChild(tr);
+  }
+}
+
+function fillSlaveGrid(body, g, start, qty, isBits, regs) {
+  const step = slaveStep(g, isBits);
+  const nRows = Math.max(1, Math.ceil(qty / step));
+  for (let i = 0; i < nRows; i++) {
+    const tr = body.children[i];
+    if (!tr) { SLV.gridSig = null; return; }
+    const slice = regs.slice(i * step, (i + 1) * step);
+    if (isBits) {
+      if (tr._input !== document.activeElement) tr._input.checked = (Number(slice[0]) || 0) !== 0;
+      tr._rawTd.textContent = "";
+    } else {
+      const v = regDecode(slice, g.fmt)[0];
+      const txt = Number.isFinite(v) ? String(Math.round(v * 10000) / 10000) : "—";
+      if (tr._input !== document.activeElement) tr._input.value = txt;
+      tr._rawTd.textContent = regBitsText(slice, "hex");
+    }
+  }
+}
+
 /* --------------------------------------------------------------- helpers -- */
 function synthRows(cp) {
   const f = cp.fmt || "u16";
-  const step = (f.startsWith("f32") || f === "u32" || f === "i32") ? 2 : 1;
+  const step = fmtRegs(f);
   const n = Math.max(1, Math.floor((cp.qty || 1) / step));
   const labels = cp.labels || {};
   const out = [];
@@ -1487,19 +2019,79 @@ function addWidget() {
   renderSchema();
 }
 
+/* Mimic updates in place too: widgets rebuild only when cfg.mimic changes
+   (add/delete/configure), live values patch every tick — перестроение рвёт
+   перетаскивание и двойные клики. */
+const SC = { sig: null, els: new Map() };
+
+function schemaSig() { return JSON.stringify([window.LANG, cfg.mimic]); }
+
 function renderSchema() {
   const canvas = $("canvas");
   if (!canvas || drag) return;
+  const s = schemaSig();
+  if (s !== SC.sig) {
+    SC.sig = s;
+    SC.els.clear();
+    canvas.innerHTML = "";
+    for (const w of (cfg.mimic || [])) buildWidget(canvas, w);
+    return;
+  }
+  updateSchemaTick();
+}
+
+function buildWidget(canvas, w) {
+  const el = document.createElement("div");
+  el.className = "widget";
+  el.style.left = w.x + "px";
+  el.style.top = w.y + "px";
+  const name = w.label || `${w.type} ${w.addr}`;
+  const refs = { el, type: w.type };
+  if (w.type === "lamp") {
+    el.innerHTML = `<div class="lamp"></div><div class="wlabel">${esc(name)}</div>`;
+    refs.lamp = el.querySelector(".lamp");
+  } else if (w.type === "value") {
+    el.innerHTML = `<div class="wval"></div><div class="wlabel">${esc(name)}</div>`;
+    refs.val = el.querySelector(".wval");
+  } else if (w.type === "bar") {
+    el.innerHTML = `<div class="wlabel"></div><div class="bar"><i></i></div>`;
+    refs.lab = el.querySelector(".wlabel");
+    refs.bar = el.querySelector(".bar i");
+  } else if (w.type === "gauge") {
+    el.innerHTML = `<div class="ggauge"></div><div class="wlabel">${esc(name)}${w.unit ? " · " + esc(w.unit) : ""}</div>`;
+    refs.gauge = el.querySelector(".ggauge");
+  } else if (w.type === "button") {
+    el.classList.add("wbutton");
+    el.innerHTML = `<div class="mbtn"></div><div class="wlabel">${esc(name)}</div>`;
+    refs.btn = el.querySelector(".mbtn");
+    el.onclick = (ev) => { if (!ev.target.classList.contains("wdel")) buttonWrite(w); };
+  } else {
+    el.innerHTML = `<div class="wlabel">${esc(name)}</div>`;
+  }
+  const del = document.createElement("div");
+  del.className = "wdel";
+  del.textContent = "✕";
+  del.onclick = (ev) => {
+    ev.stopPropagation();
+    cfg.mimic = cfg.mimic.filter((x) => x.id !== w.id);
+    renderSchema();
+  };
+  el.appendChild(del);
+  el.ondblclick = () => openWidgetModal(w);
+  el.onmousedown = (ev) => startDrag(ev, w, el);
+  canvas.appendChild(el);
+  SC.els.set(w.id, refs);
+}
+
+// Живые значения виджетов — без перестроения DOM.
+function updateSchemaTick() {
   const m = liveMap();
-  canvas.innerHTML = "";
   for (const w of (cfg.mimic || [])) {
-    const el = document.createElement("div");
-    el.className = "widget";
-    el.style.left = w.x + "px";
-    el.style.top = w.y + "px";
+    const refs = SC.els.get(w.id);
+    if (!refs) { SC.sig = null; renderSchema(); return; }
     const row = m[`${w.poll}:${w.addr}`];
     const name = w.label || `${w.type} ${w.addr}`;
-    if (w.type === "lamp") {
+    if (refs.type === "lamp") {
       let color = "#1f2937";
       if (row) {
         const lvl = row.alarm_level;
@@ -1507,42 +2099,27 @@ function renderSchema() {
         else if (lvl === "lolo" || lvl === "lo") color = "#3b82f6";
         else if ((row.raw || 0) > 0) color = "#22c55e";
       }
-      el.innerHTML = `<div class="lamp" style="background:${color};box-shadow:0 0 10px ${color}"></div><div class="wlabel">${esc(name)}</div>`;
-    } else if (w.type === "value") {
-      const txt = row ? `${row.display} ${row.unit || ""}` : "—";
-      el.innerHTML = `<div class="wval">${esc(txt)}</div><div class="wlabel">${esc(name)}</div>`;
-    } else if (w.type === "bar") {
+      refs.lamp.style.background = color;
+      refs.lamp.style.boxShadow = `0 0 10px ${color}`;
+    } else if (refs.type === "value") {
+      refs.val.textContent = row ? `${row.display} ${row.unit || ""}` : "—";
+    } else if (refs.type === "bar") {
       const min = Number.isFinite(w.min) ? w.min : 0;
       const max = Number.isFinite(w.max) ? w.max : 100;
       const v = row ? Math.max(0, Math.min(100, ((Number(row.value) || 0) - min) / Math.max(max - min, 1e-9) * 100)) : 0;
-      el.innerHTML = `<div class="wlabel">${esc(name)} ${row ? esc(row.display) : "—"}</div><div class="bar"><i style="width:${v}%"></i></div>`;
-    } else if (w.type === "gauge") {
+      refs.lab.textContent = `${name} ${row ? row.display : "—"}`;
+      refs.bar.style.width = v + "%";
+    } else if (refs.type === "gauge") {
       const min = Number.isFinite(w.min) ? w.min : 0;
       const max = Number.isFinite(w.max) ? w.max : 100;
       const v = row ? (Number(row.value) || 0) : min;
-      el.innerHTML = gaugeSvg(v, min, max, row && row.alarm_level) +
-        `<div class="wlabel">${esc(name)}${w.unit ? " · " + esc(w.unit) : ""}</div>`;
-    } else if (w.type === "button") {
+      refs.gauge.innerHTML = gaugeSvg(v, min, max, row && row.alarm_level);
+    } else if (refs.type === "button") {
       const onV = w.onVal != null ? Number(w.onVal) : 1;
       const on = row && (row.raw || 0) === onV;
-      el.classList.add("wbutton");
-      el.innerHTML = `<div class="mbtn${on ? " on" : ""}">${esc(w.btnLabel || (on ? "ВКЛ" : "ВЫКЛ"))}</div><div class="wlabel">${esc(name)}</div>`;
-      el.onclick = (ev) => { if (!ev.target.classList.contains("wdel")) buttonWrite(w); };
-    } else {
-      el.innerHTML = `<div class="wlabel">${esc(name)}</div>`;
+      refs.btn.className = "mbtn" + (on ? " on" : "");
+      refs.btn.textContent = w.btnLabel || (on ? "ВКЛ" : "ВЫКЛ");
     }
-    const del = document.createElement("div");
-    del.className = "wdel";
-    del.textContent = "✕";
-    del.onclick = (ev) => {
-      ev.stopPropagation();
-      cfg.mimic = cfg.mimic.filter((x) => x.id !== w.id);
-      renderSchema();
-    };
-    el.appendChild(del);
-    el.ondblclick = () => openWidgetModal(w);
-    el.onmousedown = (ev) => startDrag(ev, w, el);
-    canvas.appendChild(el);
   }
 }
 

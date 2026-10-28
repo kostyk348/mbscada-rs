@@ -44,6 +44,7 @@ impl Fmt {
         match self {
             Fmt::U64 | Fmt::I64 | Fmt::F64 => 4,
             Fmt::U32 | Fmt::I32 | Fmt::Hex32 => 2,
+            Fmt::F32Abcd | Fmt::F32Cdab | Fmt::F32Badc | Fmt::F32Dcba => 2,
             _ => 1,
         }
     }

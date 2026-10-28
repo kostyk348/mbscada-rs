@@ -301,3 +301,39 @@ fn event_log_file_receives_journal_lines() {
     assert!(s.contains(" [RX] "), "format: {{stamp}} [DIR] conn: text");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ------------------------------------------------ typed formats + row regs
+
+#[test]
+fn typed_poll_f32_row_regs_and_typed_write() {
+    // 1.0f32 = 0x3F800000 -> words ABCD [0x3F80, 0x0000]; -2.0f32 = 0xC0000000.
+    let mut sim = Sim::new(1);
+    sim.holding[0] = 0x3F80;
+    sim.holding[1] = 0x0000;
+    sim.holding[2] = 0xC000;
+    sim.holding[3] = 0x0000;
+    let server = serve(sim, "127.0.0.1:0").expect("bind");
+
+    let mut p = poll("c1");
+    p.fmt = Fmt::F32Abcd;
+    p.qty = 4; // 4 registers -> 2 float rows
+    let eng = Engine::start(
+        vec![conn("c1", ConnKind::Tcp, server.addr.port())],
+        vec![p],
+        vec![],
+    );
+    std::thread::sleep(Duration::from_millis(400));
+    let snap = eng.snapshot();
+    let rows = &snap.polls[0].rows;
+    assert_eq!(rows.len(), 2, "4 registers -> 2 float rows");
+    assert_eq!(rows[0].value, 1.0);
+    assert_eq!(rows[0].regs, vec![0x3F80, 0x0000], "row carries its registers");
+    assert_eq!(rows[1].value, -2.0);
+    assert_eq!(rows[0].scaled, 1.0, "scaled present for the UI");
+
+    // Typed write: 30.0f32 = 0x41F00000 -> words [0x41F0, 0x0000]
+    eng.write_multi(1, 0, vec![0x41F0, 0x0000]).expect("queued");
+    std::thread::sleep(Duration::from_millis(300));
+    let snap2 = eng.snapshot();
+    assert_eq!(snap2.polls[0].rows[0].value, 30.0, "typed write reflected");
+}

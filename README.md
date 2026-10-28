@@ -38,6 +38,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 - 🎨 **32 styled branches per row.** The original gives you two colour rules; here every row gets a first-match rule tree with per-branch dynamic row text («0 → Закрыт, 1 → Открыт»).
 - 📈 **Trends, alarms, CSV.** Per-row sparklines, hi/hi‑hi/lo/lo‑lo alarms, blink styles — and a one-click CSV value log.
 - 👁 **Parameter watch window.** Pin the registers you actually watch — or computed tags — into a floating window with big live values, alarm colours and session min/max (v1.2).
+- 🧪 **Slave simulator + typed values.** The app can answer as a Modbus device on a TCP port — poll it with any master (or with itself): editable register grid, sine/ramp/noise auto-generation, TCP and RTU-over-TCP framing. Values display and write as **real / int / uint mixed** — float32/64 with all four word orders, 32/64-bit ints, hex/bin — with typed write modals and a per-cell dec → hex → bin display cycle (v1.3).
 - 🧮 **Computed tags.** Arithmetic on your tags — `{T2 jacket} - {T1 reactor}`, `min(...)`, `pow(...)` — evaluated by the engine every scan and shown in their own table (v1.1).
 - 🗄 **Journal + archive + diagnostics.** Engine events (RX/WR/ERR/SYS) appended to a log file, configurable CSV historian (change-only or interval mode), per-connection/per-poll diagnostics with reconnect counters (v1.1).
 - 🌐 **RU/EN built in.** One switch in the toolbar flips the entire UI; docs ship in both languages.
@@ -96,6 +97,17 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 - Pin the parameters you actually watch — **any register from any poll, or computed tags** — into a floating window over the workspace (👁 Watch in the toolbar).
 - Big live values in engineering units, coloured by the rule tree (alarm fg/bg carry over from the table row), session **min / max** per card, quality and «no link» markers.
 - The pinned set is stored **in the project** (shared with Save/Open); the window position is remembered per workstation. Double-click a card to give it a custom caption, ✕ unpins, ⟲ resets min/max, clicking a value jumps to the table row.
+
+### 🧪 Slave simulator & typed values (v1.3)
+
+<img src="docs/img/slave-en.png" alt="In-app slave simulator: port, framing, editable register grid with typed view and auto-generation" width="60%">
+
+- **Both sides of the wire in one app.** The new *Slave simulator* tab serves coils / discrete / holding / input registers over Modbus TCP or RTU-over-TCP — point any master at `localhost:10502`, or poll it with mbSCADA itself.
+- **Live register grid** with a typed view (u16 / i16 / hex / u32 / i32 / float CDAB·ABCD): edit a cell and the slave’s data model changes immediately; checkboxes for bit areas; the raw register bits are shown next to the typed value.
+- **Auto-generation** (sine / ramp / noise with amplitude, base and period) animates the selected range, so alarm rules, trends and mimics have something realistic to chew on.
+- **Typed values everywhere.** Every poll carries a data type — the quick selector sits right on the table card (one click after the `.mbp` import). Typed write modals encode the value into registers for you: float → two words with the right word order, i16 → two’s complement, hex/bin inputs accepted as `0x…`/`0b…`.
+- **Per-cell display**: right-click any value to cycle dec → hex → bin (per row), or set the default for the whole poll.
+- **UI overhaul under the hood**: tables, mimic and the journal now update in place instead of rebuilding the DOM every 300 ms — no more lag and no more double-clicks torn apart by a re-render.
 
 ### 🗺 SCADA mode (mimic diagrams)
 
@@ -198,6 +210,10 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Diagnostics panel: per-poll ok/err stats, reconnect counters, last-success age (v1.1)
 - ✅ Fix: SCADA gauge colored arc overflowed the widget border (v1.1)
 - ✅ Parameter watch window: floating panel of pinned registers / computed tags — big live values, alarm colours, session min/max, custom captions, jump-to-row (v1.2)
+- ✅ In-app slave simulator: Modbus TCP / RTU-over-TCP device emulation with an editable register grid, typed view and sine/ramp/noise auto-generation (v1.3)
+- ✅ Typed values: quick data-type selector on every table card, typed write modals (float / 32-bit word orders, hex/bin inputs), per-cell dec → hex → bin display (v1.3)
+- ✅ Fix: engine `regs_per_value` ignored f32 word orders — float polls produced wrong rows (v1.3)
+- ✅ UI performance: in-place table/mimic/journal updates instead of full DOM rebuilds — double-clicks no longer torn by the 300 ms re-render (v1.3)
 - ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
 - ⬜ Per-row trend window (bigger than a sparkline)
 
