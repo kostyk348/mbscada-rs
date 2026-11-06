@@ -112,7 +112,7 @@ fn bridge_end_to_end() {
     let engine = Arc::new(Engine::start_with(EngineCfg {
         connections: project.connections.clone(),
         polls: merged,
-        rules: project.rules,
+        rules: project.rules.clone(),
         computed: project.computed.clone(),
         log_path: None,
     }));
