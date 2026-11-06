@@ -7,6 +7,7 @@
 //! * [`rules`] — extra styling rules (colour, blink, severity).
 //! * [`engine`] — the multi-poll engine producing snapshots for the UI.
 
+pub mod coalesce;
 pub mod engine;
 pub mod expr;
 pub mod format;
@@ -14,6 +15,8 @@ pub mod import;
 pub mod model;
 pub mod rules;
 pub mod transport;
+
+pub use coalesce::{merge_polls, SYNTH_ID_BASE};
 
 pub use engine::{
     CommEntry, ComputedView, ConnStats, ConnView, Engine, EngineCfg, PollStats, PollView, RowView,
