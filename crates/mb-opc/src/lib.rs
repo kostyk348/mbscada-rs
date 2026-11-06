@@ -5,3 +5,6 @@
 //! engine snapshots into it. The binary wires that up with a CLI.
 
 pub mod bridge;
+
+/// URI of the bridge's OPC UA namespace and application.
+pub const NAMESPACE_URI: &str = "urn:mbscada:opc";
