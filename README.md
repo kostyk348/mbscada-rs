@@ -59,7 +59,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 </details>
 
-## ⬇ Download v1.5.1
+## ⬇ Download v1.5.2
 
 Prebuilt installers for every platform — no Rust toolchain needed.
 Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
@@ -214,6 +214,8 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Diagnostics panel: per-poll ok/err stats, reconnect counters, last-success age (v1.1)
 - ✅ Fix: SCADA gauge colored arc overflowed the widget border (v1.1)
 - ✅ Fix: SCADA gauge arc swept the wrong way above half-scale — SVG large-arc flag on a ≤180° sweep (v1.5.1)
+- ✅ Production-grade alarm panel: colored severity chips (CRIT/HIGH/LOW) next to the value, severity-first sorting, re-alert on level escalation, unacknowledged-critical dot pulse, info level is silent (v1.5.2)
+- ✅ Fix: Windows shortcut kept the old icon after an in-place upgrade — the installer now flushes the shell icon cache (SHChangeNotify via an NSIS hook) (v1.5.2)
 - ✅ Parameter watch window: floating panel of pinned registers / computed tags — big live values, alarm colours, session min/max, custom captions, jump-to-row (v1.2)
 - ✅ In-app slave simulator: Modbus TCP / RTU-over-TCP device emulation with an editable register grid, typed view and sine/ramp/noise auto-generation (v1.3)
 - ✅ Typed values: quick data-type selector on every table card, typed write modals (float / 32-bit word orders, hex/bin inputs), per-cell dec → hex → bin display (v1.3)

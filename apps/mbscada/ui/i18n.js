@@ -89,6 +89,7 @@
       al_ack: "квит.", al_bad_conn: "нет связи",
       al_jump_hint: "клик — перейти к строке в таблице",
       al_acked: "✓",
+      al_sev_hihi: "КРИТ", al_sev_hi: "ВЫС", al_sev_lo: "НИЗ", al_sev_lolo: "НИЗ",
       // watch window (viewable parameters)
       watch_btn: "👁 Параметры", watch_btn_title: "окно просматриваемых параметров",
       watch_title: "Просмотр параметров",
@@ -268,6 +269,7 @@
       al_ack: "ack", al_bad_conn: "no link",
       al_jump_hint: "click to jump to the table row",
       al_acked: "✓",
+      al_sev_hihi: "CRIT", al_sev_hi: "HIGH", al_sev_lo: "LOW", al_sev_lolo: "LOW",
       // watch window (viewable parameters)
       watch_btn: "👁 Watch", watch_btn_title: "parameter watch window",
       watch_title: "Parameter watch",
