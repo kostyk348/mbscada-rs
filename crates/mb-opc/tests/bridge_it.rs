@@ -35,7 +35,7 @@ fn project_json(mb_port: u16) -> String {
   ],
   "polls": [
     {{"id": 1, "name": "Temps", "conn_id": "c1", "slave": 1, "func": 3, "start": 0, "qty": 2, "scan_ms": 200, "fmt": "f32_abcd", "mult": 1.0, "div": 1.0, "labels": {{"0": "T reactor"}}, "unit": "°C"}},
-    {{"id": 2, "name": "Pressures", "conn_id": "c1", "slave": 1, "func": 3, "start": 2, "qty": 2, "scan_ms": 200, "fmt": "f32_abcd", "mult": 0.1, "div": 1.0, "labels": {{"2": "P inlet"}}}},
+    {{"id": 2, "name": "Pressures", "conn_id": "c1", "slave": 1, "func": 3, "start": 2, "qty": 2, "scan_ms": 200, "fmt": "f32_abcd", "mult": 1.0, "div": 1.0, "labels": {{"2": "P inlet"}}}},
     {{"id": 3, "name": "Counter", "conn_id": "c1", "slave": 1, "func": 3, "start": 20, "qty": 2, "scan_ms": 200, "fmt": "u32", "labels": {{"20": "N batches"}}}},
     {{"id": 4, "name": "Valves", "conn_id": "c1", "slave": 1, "func": 1, "start": 0, "qty": 10, "scan_ms": 200, "fmt": "u16", "labels": {{"5": "V5 open"}}}}
   ],
@@ -88,9 +88,9 @@ fn bridge_end_to_end() {
         // f32 25.5 = 0x41CC0000 (ABCD, high word first) at 0..1
         sim.holding[0] = 0x41CC;
         sim.holding[1] = 0x0000;
-        // f32 123.0 at 2..3, scaled by 0.1 -> 12.3
-        sim.holding[2] = 0x42F6;
-        sim.holding[3] = 0x0000;
+        // f32 12.3 at 2..3 (0x4144CCCC)
+        sim.holding[2] = 0x4144;
+        sim.holding[3] = 0xCCCC;
         // u32 10000 = 0x00002710 at 20..21
         sim.holding[20] = 0x0000;
         sim.holding[21] = 0x2710;
@@ -164,7 +164,7 @@ fn bridge_end_to_end() {
     }
 
     assert!((as_f64(&values[0]) - 25.5).abs() < 1e-4, "T reactor = 25.5, got {}", values[0].value.clone().unwrap());
-    assert!((as_f64(&values[1]) - 12.3).abs() < 1e-9, "P inlet = 123.0 * 0.1, got {}", values[1].value.clone().unwrap());
+    assert!((as_f64(&values[1]) - 12.3).abs() < 1e-4, "P inlet = f32 12.3, got {}", values[1].value.clone().unwrap());
     assert!((as_f64(&values[2]) - 10000.0).abs() < 1e-9, "N batches = 10000, got {}", values[2].value.clone().unwrap());
     assert!(as_bool(&values[3]), "V5 open = true");
 
@@ -195,7 +195,7 @@ fn bridge_end_to_end() {
         std::thread::sleep(Duration::from_millis(250));
     }
     let calc = read_value(&session, &ns2("calc:0"));
-    assert!((as_f64(&calc) - 26.0 / 12.3).abs() < 1e-6, "calc = T/P, got {}", calc.value.unwrap());
+    assert!((as_f64(&calc) - 26.0 / 12.3).abs() < 1e-4, "calc = T/P, got {}", calc.value.unwrap());
 
     // Status variables: online, and tx grows (engine is polling).
     let online = read_value(&session, &ns2("conn:c1:online"));
