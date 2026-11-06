@@ -305,6 +305,9 @@ function renderCalcList() {
    lives in this session; the engine keeps evaluating levels as before. */
 const AL = { active: {}, hist: [], sound: localStorage.getItem("mbscada.alSound") !== "0", tab: "active" };
 const JUMP = { key: null, until: 0, scrolled: true };
+/* Критичность уровня: порядок сортировки панели и решение об эскалации
+   (движок отдаёт hihi / hi / lo / lolo). */
+const SEV_RANK = { hihi: 0, lolo: 1, hi: 2, lo: 3 };
 
 function alKey(pollId, addr) { return pollId + ":" + addr; }
 
@@ -324,11 +327,23 @@ function updateAlarms() {
           display: r.display, unit: r.unit, quality: r.quality,
           since: Date.now(), ack: false,
         });
-        if (AL.sound) beep();
+        // info-уровень (lo) не звучит — только подсвечивается.
+        if (AL.sound && r.alarm_level !== "lo") beep();
       } else {
         a.poll = p.name; a.name = r.name; a.display = r.display;
-        a.msg = r.alarm_msg || r.alarm_level; a.level = r.alarm_level;
+        a.msg = r.alarm_msg || r.alarm_level;
         a.quality = r.quality;
+        // Уровень сменился: чип/цвет обновляем всегда, а повторная тревога
+        // (новый штамп, сброс квитирования, звук) — только на эскалацию.
+        if (a.level !== r.alarm_level) {
+          const escalate = (SEV_RANK[r.alarm_level] ?? 9) < (SEV_RANK[a.level] ?? 9);
+          a.level = r.alarm_level;
+          if (escalate) {
+            a.since = Date.now();
+            a.ack = false;
+            if (AL.sound) beep();
+          }
+        }
       }
     }
   }
@@ -351,6 +366,14 @@ function alarmsSig() {
     AL.hist.map((a) => [a.key, a.since, a.cleared])]);
 }
 
+/* Цветная метка уровня рядом со значением — критичность читается сразу,
+   а не только по точке и рамке ряда. */
+const SEV_LABEL = { hihi: "al_sev_hihi", lolo: "al_sev_lolo", hi: "al_sev_hi", lo: "al_sev_lo" };
+function sevChip(level) {
+  const k = SEV_LABEL[level];
+  return k ? `<span class="al-sev sev-${level}">${esc(t(k))}</span>` : "";
+}
+
 function renderAlarms() {
   if (!sigChanged("alarms", alarmsSig())) return;
   const badge = $("alarmBadge");
@@ -362,7 +385,8 @@ function renderAlarms() {
   const act = $("alarmActive"), hist = $("alarmHist");
   if (!act || !hist) return;
   act.innerHTML = "";
-  const items = Object.values(AL.active).sort((a, b) => (a.ack - b.ack) || (b.since - a.since));
+  const items = Object.values(AL.active).sort((a, b) => (a.ack - b.ack)
+    || ((SEV_RANK[a.level] ?? 9) - (SEV_RANK[b.level] ?? 9)) || (b.since - a.since));
   if (!items.length) act.innerHTML = `<div class="empty">${esc(t("al_none"))}</div>`;
   for (const a of items) {
     const el = document.createElement("div");
@@ -370,7 +394,7 @@ function renderAlarms() {
     el.innerHTML = `<div class="al-top"><span class="al-dot"></span>
         <span class="al-time">${hms(a.since)}</span>
         <b class="grow">${esc(a.name)}</b>
-        <span class="mono">${esc(a.display)}${a.unit ? " " + esc(a.unit) : ""}</span></div>
+        <span class="mono">${esc(a.display)}${a.unit ? " " + esc(a.unit) : ""}</span>${sevChip(a.level)}</div>
       <div class="al-bot"><span class="grow">${esc(a.msg)}${a.quality === "bad" ? ' · <span class="bad">' + esc(t("al_bad_conn")) + "</span>" : ""}</span>
         <span class="sub">${esc(a.poll)} @${esc(a.disp)}</span></div>`;
     el.title = t("al_jump_hint");
@@ -384,7 +408,7 @@ function renderAlarms() {
     const el = document.createElement("div");
     el.className = "al-item lv-" + a.level + " ack hist";
     el.innerHTML = `<div class="al-top"><span class="al-dot"></span>
-        <b class="grow">${esc(a.name)}</b><span class="sub">${esc(a.msg)}</span></div>
+        <b class="grow">${esc(a.name)}</b>${sevChip(a.level)}<span class="sub">${esc(a.msg)}</span></div>
       <div class="al-bot"><span class="sub">${hms(a.since)} → ${hms(a.cleared)} · ${fmtDur(a.dur)}</span>
         <span class="sub">${esc(a.poll)} @${esc(a.disp)}</span></div>`;
     hist.appendChild(el);
