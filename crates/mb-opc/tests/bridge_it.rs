@@ -82,6 +82,7 @@ fn as_u64(dv: &DataValue) -> u64 {
 
 #[test]
 fn bridge_end_to_end() {
+    opcua::console_logging::init();
     // --- Modbus side: a simulator with known register contents -------------
     let mut sim = Sim::new(1);
     {

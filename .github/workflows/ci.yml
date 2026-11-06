@@ -21,3 +21,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config libssl-dev
       - name: cargo test
         run: cargo test
+        env:
+          RUST_LOG: debug
