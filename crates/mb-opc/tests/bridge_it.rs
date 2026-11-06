@@ -10,7 +10,8 @@ use mb_engine::{Engine, EngineCfg};
 use mb_opc::bridge::{build_server_and_space, pump, Project};
 use opcua::client::prelude::*;
 use opcua::server::prelude::*;
-use opcua::types::{AttributeId, ReadValueId, TimestampsToReturn};
+use opcua::types::service_types::{ReadValueId, TimestampsToReturn};
+use opcua::types::AttributeId;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
