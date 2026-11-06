@@ -2402,7 +2402,10 @@ function gaugeSvg(v, min, max, level, ruleColor) {
   const cx = 90, cy = 84, r = 60, sw = 12;
   const th = Math.PI * (1 - t);
   const x = cx + r * Math.cos(th), y = cy - r * Math.sin(th);
-  const large = t > 0.5 ? 1 : 0;
+  // Полукруглая шкала: обзор дуги максимум 180°, поэтому large-arc всегда 0.
+  // Флаг 1 при t > 0.5 заставляет SVG взять зеркальный центр — дуга уходит
+  // вкруговую и вылезает за виджет (кривой гейдж на значениях выше середины).
+  const large = 0;
   // Цвет заливки: сработавшая ветка правила важнее уровня аварии.
   const col = ruleColor || (level === "hihi" || level === "hi" ? "#ef4444"
     : level === "lolo" || level === "lo" ? "#3b82f6" : "#22d3ee");

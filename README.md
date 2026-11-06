@@ -213,6 +213,7 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Engine event journal to a log file; configurable CSV historian (change-only / interval) that resumes on start (v1.1)
 - ✅ Diagnostics panel: per-poll ok/err stats, reconnect counters, last-success age (v1.1)
 - ✅ Fix: SCADA gauge colored arc overflowed the widget border (v1.1)
+- ✅ Fix: SCADA gauge arc swept the wrong way above half-scale — SVG large-arc flag on a ≤180° sweep (v1.5.1)
 - ✅ Parameter watch window: floating panel of pinned registers / computed tags — big live values, alarm colours, session min/max, custom captions, jump-to-row (v1.2)
 - ✅ In-app slave simulator: Modbus TCP / RTU-over-TCP device emulation with an editable register grid, typed view and sine/ramp/noise auto-generation (v1.3)
 - ✅ Typed values: quick data-type selector on every table card, typed write modals (float / 32-bit word orders, hex/bin inputs), per-cell dec → hex → bin display (v1.3)
