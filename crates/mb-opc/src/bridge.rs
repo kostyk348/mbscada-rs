@@ -197,7 +197,7 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
             }
             NodeKind::Calc { name } => {
                 let Some(c) = calc_by_name.get(name.as_str()) else { continue };
-                let status = if c.ok { StatusCode::Good } else { StatusCode::Bad };
+                let status = if c.ok { StatusCode::Good } else { StatusCode::BadDataUnavailable };
                 if let Some(var) = sp.find_variable_mut_by_ref(&n.id) {
                     let _ = var.set_value_direct(Variant::Double(c.value), status, &now, &now);
                 }
