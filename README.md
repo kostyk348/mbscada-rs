@@ -59,7 +59,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 </details>
 
-## ⬇ Download v1.5.0
+## ⬇ Download v1.5.1
 
 Prebuilt installers for every platform — no Rust toolchain needed.
 Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
