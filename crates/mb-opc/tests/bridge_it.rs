@@ -138,6 +138,7 @@ fn bridge_end_to_end() {
                 user_token_id: "ANONYMOUS".to_string(),
             },
         )])
+        .default_endpoint(format!("opc.tcp://127.0.0.1:{opc_port}/"))
         .client()
         .expect("client config valid");
 
