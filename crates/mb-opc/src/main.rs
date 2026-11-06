@@ -81,7 +81,7 @@ fn main() {
     let engine = Arc::new(Engine::start_with(EngineCfg {
         connections: project.connections.clone(),
         polls: engine_polls,
-        rules: project.rules,
+        rules: project.rules.clone(),
         computed: project.computed.clone(),
         log_path,
     }));

@@ -11,7 +11,6 @@ use mb_engine::{Engine, EngineCfg};
 use mb_opc::bridge::{build_server_and_space, pump, Project};
 use opcua::client::prelude::*;
 use opcua::server::prelude::*;
-use opcua::client::config::ANONYMOUS_USER_TOKEN_ID;
 use opcua::types::service_types::{ReadValueId, TimestampsToReturn};
 use opcua::types::AttributeId;
 use opcua::sync::RwLock;
@@ -84,7 +83,7 @@ fn as_u64(dv: &DataValue) -> u64 {
 #[test]
 fn bridge_end_to_end() {
     // --- Modbus side: a simulator with known register contents -------------
-    let sim = Sim::new(1);
+    let mut sim = Sim::new(1);
     {
         // f32 25.5 = 0x41CC0000 (ABCD, high word first) at 0..1
         sim.holding[0] = 0x41CC;
@@ -114,7 +113,7 @@ fn bridge_end_to_end() {
         connections: project.connections.clone(),
         polls: merged,
         rules: project.rules,
-        computed: project.computed,
+        computed: project.computed.clone(),
         log_path: None,
     }));
 
@@ -135,7 +134,7 @@ fn bridge_end_to_end() {
                 url: format!("opc.tcp://127.0.0.1:{opc_port}/"),
                 security_policy: String::from(SecurityPolicy::None.to_str()),
                 security_mode: String::from(MessageSecurityMode::None),
-                user_token_id: ANONYMOUS_USER_TOKEN_ID.to_string(),
+                user_token_id: "ANONYMOUS".to_string(),
             },
         )])
         .client()
@@ -145,7 +144,7 @@ fn bridge_end_to_end() {
         .connect_to_endpoint_id(Some("none"))
         .expect("client connects to the bridge");
 
-    let ns2 = |s: &str| NodeId::new(2, s);
+    let ns2 = |s: &str| NodeId::new(2, s.to_string());
 
     // --- Pump snapshots until the tags go good (or fail after 15 s) ---------
     let tag_ids: Vec<NodeId> = ["p1:0", "p2:2", "p3:20", "p4:5"]
@@ -164,9 +163,9 @@ fn bridge_end_to_end() {
         std::thread::sleep(Duration::from_millis(250));
     }
 
-    assert!((as_f64(&values[0]) - 25.5).abs() < 1e-4, "T reactor = 25.5, got {}", values[0].value.unwrap());
-    assert!((as_f64(&values[1]) - 12.3).abs() < 1e-9, "P inlet = 123.0 * 0.1, got {}", values[1].value.unwrap());
-    assert!((as_f64(&values[2]) - 10000.0).abs() < 1e-9, "N batches = 10000, got {}", values[2].value.unwrap());
+    assert!((as_f64(&values[0]) - 25.5).abs() < 1e-4, "T reactor = 25.5, got {}", values[0].value.clone().unwrap());
+    assert!((as_f64(&values[1]) - 12.3).abs() < 1e-9, "P inlet = 123.0 * 0.1, got {}", values[1].value.clone().unwrap());
+    assert!((as_f64(&values[2]) - 10000.0).abs() < 1e-9, "N batches = 10000, got {}", values[2].value.clone().unwrap());
     assert!(as_bool(&values[3]), "V5 open = true");
 
     // Live update: change a register, the value must follow.
