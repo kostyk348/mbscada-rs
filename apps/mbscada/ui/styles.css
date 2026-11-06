@@ -302,3 +302,44 @@ tr.flashrow td { animation: flashfade 0.65s ease-in-out 3; }
 #slBody input[type="checkbox"] { width: auto; }
 
 .ggauge { display: block; }
+
+/* ---- v1.5: SCADA-виджеты на правилах: тренд, состояние, слайдер ---- */
+.widget { transition: border-color .2s, box-shadow .2s; }
+.widget:hover { box-shadow: 0 4px 16px rgba(2, 6, 16, 0.5); }
+.widget.blink { animation: blinker 1s step-start infinite; }
+.wtrend .trendbox { min-width: 200px; }
+.ttxt { fill: var(--text); font: 700 11px ui-monospace, Consolas, monospace; }
+.ttxt.sub { fill: var(--muted); font-weight: 400; font-size: 9px; }
+.wstate-val { display: inline-block; min-width: 64px; padding: 4px 12px;
+  border-radius: 7px; font-weight: 800; font-size: 15px; letter-spacing: .4px;
+  background: #1f2937; color: var(--text); transition: background .25s, color .25s; }
+.rslider { width: 148px; accent-color: var(--accent); cursor: pointer; margin: 2px 0; }
+.slval { font-size: 12.5px; color: var(--muted); }
+
+/* ---- v1.5: интерактивный тур (обучение) ---- */
+.tour-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(2, 6, 16, 0.38);
+  pointer-events: none; transition: background .2s; }
+.tour-overlay[hidden] { display: none; }
+.tour-hole { position: fixed; z-index: 61; display: none; pointer-events: none;
+  border: 2px solid var(--accent); border-radius: 10px;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.22), 0 0 26px rgba(34, 211, 238, 0.4);
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease; }
+.tour-card { position: fixed; z-index: 62; width: 340px; background: var(--panel);
+  border: 1px solid #2a3b5e; border-radius: 12px; padding: 13px 15px;
+  box-shadow: 0 18px 48px rgba(2, 6, 16, 0.72); pointer-events: auto; }
+.tour-step { color: var(--accent); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .5px; text-transform: uppercase; }
+.tour-title { font-weight: 700; font-size: 14.5px; margin: 5px 0 4px; }
+.tour-text { color: var(--muted); font-size: 12.5px; line-height: 1.45; white-space: pre-line; }
+.tour-actions { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+.tour-actions .spacer { flex: 1; }
+
+/* ---- v1.5: общий полиш ---- */
+.tab { transition: background .15s, color .15s, box-shadow .15s; }
+.tab:hover { color: var(--text); border-color: #2a3b5e; }
+.tab.active { box-shadow: inset 0 2px 0 var(--accent); }
+.card { box-shadow: 0 2px 12px rgba(2, 6, 16, 0.35); }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
+.topbar { box-shadow: 0 2px 12px rgba(2, 6, 16, 0.4); }
+.details-open summary { color: var(--text); }

@@ -27,6 +27,7 @@
         <button id="btnStart" class="primary" data-i="start" data-it="start_title">▶ Старт</button>
         <button id="btnStop" data-i="stop" data-it="stop_title">■ Стоп</button>
         <button id="csvBtn" data-it="csv_title" title="лог значений в CSV (пишутся только изменившиеся строки)">CSV</button>
+        <button id="btnTour" data-i="tour_btn" data-it="tour_btn_title">🎓 Обучение</button>
         <button id="btnWatch" data-i="watch_btn" data-it="watch_btn_title">👁 Параметры</button>
         <span class="sep"></span>
         <button id="btnSave" data-i="save" data-it="save_title">Сохранить</button>
@@ -147,6 +148,7 @@
                 <option value="in_range" data-i="c_in">в диапазоне</option>
                 <option value="outside_range" data-i="c_out">вне диапазона</option>
                 <option value="bit" data-i="c_bit">бит установлен</option>
+                <option value="always" data-i="c_always">всегда (ветка «иначе»)</option>
               </select></label>
               <label><span data-i="f_value">Значение</span> <input id="rValue" type="number" value="0" /></label>
               <label><span data-i="f_and">И (диапазон / № бита)</span> <input id="rValue2" type="number" value="0" /></label>
@@ -219,6 +221,9 @@
               <option value="bar" data-i="w_bar">Полоса</option>
               <option value="gauge" data-i="w_gauge">Гейдж</option>
               <option value="button" data-i="w_button">Кнопка (запись)</option>
+              <option value="trend" data-i="w_trend">Тренд</option>
+              <option value="state" data-i="w_state">Состояние (правила)</option>
+              <option value="slider" data-i="w_slider">Слайдер (запись)</option>
               <option value="text" data-i="w_text">Текст</option>
             </select>
             <select id="wReg" class="wide"></select>
@@ -387,6 +392,24 @@
         <div class="modal-actions">
           <button id="wmodalOk" class="primary" data-i="m_save">Сохранить</button>
           <button id="wmodalCancel" data-i="b_cancel">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Интерактивный тур: затемнение + рамка-«вырез» вокруг цели и карточка
+         шага. Фон кликабелен — шаги с действием пользователь делает сам. -->
+    <div id="tour" class="tour-overlay" hidden>
+      <div id="tourHole" class="tour-hole"></div>
+      <div id="tourCard" class="tour-card">
+        <div class="tour-step" id="tourStep"></div>
+        <div class="tour-title" id="tourTitle"></div>
+        <div class="tour-text" id="tourText"></div>
+        <div class="tour-actions">
+          <button id="tourDemo" class="primary mini" data-i="tour_demo">🚀 Демо-проект</button>
+          <span class="spacer"></span>
+          <button id="tourSkip" class="mini" data-i="tour_skip">Пропустить</button>
+          <button id="tourPrev" class="mini" data-i="tour_prev">← Назад</button>
+          <button id="tourNext" class="primary">Далее →</button>
         </div>
       </div>
     </div>

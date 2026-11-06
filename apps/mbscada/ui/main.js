@@ -116,18 +116,22 @@ const SPARK_N = 40;
 const SPARK_HIST = {};          // "pollId:addr" -> {vals:[], t0, t1, min, max}
 const SPARK_W = 110, SPARK_H = 22;
 
-function pushSpark(pollId, r, value) {
-  const key = pollId + ":" + r.addr;
+function sparkPushVal(key, num, blink) {
   let h = SPARK_HIST[key];
   if (!h) h = (SPARK_HIST[key] = { vals: [], min: Infinity, max: -Infinity });
-  const num = parseFloat(value);
   if (Number.isFinite(num)) {
     h.vals.push(num);
     if (h.vals.length > SPARK_N) h.vals.shift();
     if (num < h.min) h.min = num;
     if (num > h.max) h.max = num;
   }
-  if (r.blink) h.blink = Date.now();
+  if (blink) h.blink = Date.now();
+  return h;
+}
+
+function pushSpark(pollId, r, value) {
+  const key = pollId + ":" + r.addr;
+  sparkPushVal(key, parseFloat(value), r.blink);
   return key;
 }
 
@@ -631,8 +635,16 @@ async function boot() {
   wireForms();
   await loadUiState();
   watchLoadPos();
+  tourWire();
   setInterval(refresh, 300);
   refresh();
+  // Первый запуск без проекта — предлагаем тур один раз.
+  try {
+    if (hasTauri && !localStorage.getItem("mbscada.tourDone") &&
+        !cfg.connections.length && !cfg.polls.length) {
+      setTimeout(() => { if (!TUT.active && !cfg.connections.length) tourStart(0); }, 600);
+    }
+  } catch { /* без localStorage */ }
   if (!hasTauri) {
     footer(t("no_tauri"), true);
   }
@@ -794,6 +806,7 @@ async function refresh() {
     }
     render();
     slaveTick();
+    tourTick();
   } catch (e) { footer(t("err_prefix") + e, true); }
 }
 
@@ -1348,13 +1361,24 @@ function regOptionsHTML() {
   return opts.join("");
 }
 function fillRegSelects() {
-  const sig = cfg.polls.map((p) => `${p.id}:${p.start}:${p.qty}`).join("|");
-  for (const id of ["rReg", "wReg"]) {
-    const el = $(id);
-    if (el && el.dataset.sig !== sig) {
-      el.dataset.sig = sig;
-      el.innerHTML = regOptionsHTML();
+  const sig = cfg.polls.map((p) => `${p.id}:${p.start}:${p.qty}`).join("|") +
+    "#" + (cfg.computed || []).map((c) => c.name).join(",");
+  const el = $("rReg");
+  if (el && el.dataset.sig !== sig) {
+    el.dataset.sig = sig;
+    el.innerHTML = regOptionsHTML();
+  }
+  // Пикер виджетов дополнительно знает вычисляемые тэги (только чтение).
+  const wsel = $("wReg");
+  if (wsel && wsel.dataset.sig !== sig) {
+    wsel.dataset.sig = sig;
+    let html = regOptionsHTML();
+    if ((cfg.computed || []).length) {
+      html += `<optgroup label="${esc(t("watch_group_calc"))}">` +
+        cfg.computed.map((c) => `<option value="calc:${esc(c.name)}">∑ ${esc(c.name)}</option>`).join("") +
+        `</optgroup>`;
     }
+    wsel.innerHTML = html;
   }
 }
 
@@ -1792,6 +1816,7 @@ function wireForms() {
     let cond;
     if (kind === "in_range" || kind === "outside_range") cond = { kind, lo: v, hi: Number($("rValue2").value) };
     else if (kind === "bit") cond = { kind, n: Number($("rValue2").value), set: true };
+    else if (kind === "always") cond = { kind };
     else cond = { kind, v };
     const sev = $("rSeverity").value;
     const t = $("rText").value.trim();
@@ -2106,7 +2131,8 @@ function condText(c) {
     case "gt": return `> ${c.v}`; case "ge": return `≥ ${c.v}`; case "lt": return `< ${c.v}`; case "le": return `≤ ${c.v}`;
     case "eq": return `= ${c.v}`; case "ne": return `≠ ${c.v}`;
     case "in_range": return `${c.lo}..${c.hi}`; case "outside_range": return `вне ${c.lo}..${c.hi}`;
-    case "bit": return `бит ${c.n}`; default: return c.kind;
+    case "bit": return `бит ${c.n}`; case "always": return t("c_always");
+    default: return c.kind;
   }
 }
 function miniBtn(txt, fn) { const b = document.createElement("button"); b.className = "mini"; b.textContent = txt; b.onclick = fn; return b; }
@@ -2125,8 +2151,6 @@ function liveMap() {
 function addWidget() {
   const val = $("wReg").value;
   if (!val) { footer(t("no_widgets"), true); return; }
-  const [pid, addr] = val.split(":").map(Number);
-  const poll = findCfgPoll(pid);
   cfg.mimic = cfg.mimic || [];
   const n = cfg.mimic.length;
   const item = {
@@ -2134,14 +2158,24 @@ function addWidget() {
     type: $("wType").value,
     x: 30 + (n % 6) * 150,
     y: 30 + Math.floor(n / 6) * 110,
-    poll: pid,
-    addr,
-    label: poll ? regLabel(poll, addr) : String(addr),
   };
+  if (val.startsWith("calc:")) {
+    // Виджет на вычисляемом тэге: значение считает движок (только чтение).
+    item.calc = val.slice(5);
+    item.label = item.calc;
+  } else {
+    const [pid, addr] = val.split(":").map(Number);
+    const poll = findCfgPoll(pid);
+    item.poll = pid;
+    item.addr = addr;
+    item.label = poll ? regLabel(poll, addr) : String(addr);
+  }
   // Настраиваемые дефолты по типу — всё правится двойным кликом.
   if (item.type === "gauge") { item.min = 0; item.max = 100; item.unit = ""; }
   if (item.type === "bar") { item.min = 0; item.max = 100; }
   if (item.type === "button") { item.onVal = 1; item.offVal = 0; item.btnLabel = ""; }
+  if (item.type === "trend") { item.min = null; item.max = null; } // автоось
+  if (item.type === "slider") { item.min = 0; item.max = 1000; item.step = 1; }
   cfg.mimic.push(item);
   renderSchema();
 }
@@ -2192,6 +2226,41 @@ function buildWidget(canvas, w) {
     el.innerHTML = `<div class="mbtn"></div><div class="wlabel">${esc(name)}</div>`;
     refs.btn = el.querySelector(".mbtn");
     el.onclick = (ev) => { if (!ev.target.classList.contains("wdel")) buttonWrite(w); };
+  } else if (w.type === "trend") {
+    el.classList.add("wtrend");
+    el.innerHTML = `<div class="wlabel"></div><div class="trendbox"></div>`;
+    refs.lab = el.querySelector(".wlabel");
+    refs.trend = el.querySelector(".trendbox");
+  } else if (w.type === "state") {
+    el.classList.add("wstate");
+    el.innerHTML = `<div class="wstate-val">—</div><div class="wlabel">${esc(name)}</div>`;
+    refs.state = el.querySelector(".wstate-val");
+  } else if (w.type === "slider") {
+    el.classList.add("wslider");
+    el.innerHTML = `<div class="wlabel">${esc(name)}</div><input type="range" class="rslider" /><div class="slval mono">—</div>`;
+    refs.slider = el.querySelector(".rslider");
+    refs.slval = el.querySelector(".slval");
+    const lo = Number.isFinite(w.min) ? w.min : 0;
+    const hi = Number.isFinite(w.max) ? w.max : 1000;
+    refs.slider.min = lo;
+    refs.slider.max = hi;
+    refs.slider.step = Math.max(Number(w.step) || 1, 1);
+    // Значение берём из oninput (во время перетаскивания), а не на смене —
+    // тик перерисовки мог бы успеть сбросить ползунок из-под пользователя.
+    refs.slPend = null;
+    refs.slTouch = 0;
+    refs.slider.oninput = () => {
+      refs.slPend = Number(refs.slider.value);
+      refs.slval.textContent = refs.slider.value;
+      refs.slTouch = Date.now();
+    };
+    let wdeb = null;
+    refs.slider.onchange = () => {
+      clearTimeout(wdeb);
+      wdeb = setTimeout(() => sliderWrite(w, refs.slPend != null ? refs.slPend : Number(refs.slider.value)), 250);
+    };
+    // Ползунок тянем мышью, а не виджет; клик по слайдеру не тащит элемент.
+    refs.slider.onmousedown = (ev) => ev.stopPropagation();
   } else {
     el.innerHTML = `<div class="wlabel">${esc(name)}</div>`;
   }
@@ -2210,37 +2279,88 @@ function buildWidget(canvas, w) {
   SC.els.set(w.id, refs);
 }
 
+// Источник виджета, единый «row-like» вид: строка снапшота регистра или
+// вычисляемый тэг. Правила (32 ветки на регистр) уже применены движком:
+// row.name несёт текст сработавшей ветки, fg/bg/blink — её стиль.
+function widgetRow(w) {
+  if (w.calc) {
+    const c = ((snap && snap.computed) || []).find((x) => x.name === w.calc);
+    if (!c) return null;
+    return {
+      name: w.label || w.calc, display: c.display, unit: c.unit || "",
+      raw: null, value: c.value, alarm_level: c.ok ? "ok" : "bad",
+      alarm_msg: c.err || "", fg: null, bg: null, blink: false,
+      quality: c.ok ? "good" : "bad",
+    };
+  }
+  return liveMap()[`${w.poll}:${w.addr}`] || null;
+}
+
+// Цвет виджета: сначала цвет сработавшей ветки правила (fg/bg), затем
+// уровень аварии — как в таблице, только на схеме.
+function ruleColorOf(row) {
+  if (!row) return { color: null, blink: false, fg: null, bg: null };
+  let color = row.bg || row.fg || null;
+  if (!color) {
+    const lvl = row.alarm_level;
+    color = (lvl === "hihi" || lvl === "hi" || lvl === "bad") ? "#ef4444"
+      : (lvl === "lolo" || lvl === "lo") ? "#3b82f6" : null;
+  }
+  return { color, blink: !!row.blink, fg: row.fg || null, bg: row.bg || null };
+}
+
 // Живые значения виджетов — без перестроения DOM.
 function updateSchemaTick() {
-  const m = liveMap();
   for (const w of (cfg.mimic || [])) {
     const refs = SC.els.get(w.id);
     if (!refs) { SC.sig = null; renderSchema(); return; }
-    const row = m[`${w.poll}:${w.addr}`];
+    const row = widgetRow(w);
     const name = w.label || `${w.type} ${w.addr}`;
+    const st = ruleColorOf(row);
+    refs.el.classList.toggle("blink", st.blink);
+    if (st.bg || st.fg) refs.el.style.borderColor = st.bg || st.fg;
+    else refs.el.style.borderColor = "";
     if (refs.type === "lamp") {
-      let color = "#1f2937";
-      if (row) {
-        const lvl = row.alarm_level;
-        if (lvl === "hihi" || lvl === "hi") color = "#ef4444";
-        else if (lvl === "lolo" || lvl === "lo") color = "#3b82f6";
-        else if ((row.raw || 0) > 0) color = "#22c55e";
-      }
+      const color = st.color || (row && (row.raw || 0) > 0 ? "#22c55e" : "#1f2937");
       refs.lamp.style.background = color;
       refs.lamp.style.boxShadow = `0 0 10px ${color}`;
     } else if (refs.type === "value") {
       refs.val.textContent = row ? `${row.display} ${row.unit || ""}` : "—";
+      refs.val.style.color = st.fg || "";
+    } else if (refs.type === "state") {
+      // Текст состояния: движок кладёт текст сработавшей ветки правила в
+      // row.name — показываем его; без ветки — живое значение. Красится
+      // правилом (цвет ветки), как строка в таблице.
+      const dyn = row && row.name && row.name !== name;
+      refs.state.textContent = row ? (dyn ? row.name : `${row.display}${row.unit ? " " + row.unit : ""}`) : "—";
+      refs.state.style.color = st.fg || "";
+      refs.state.style.background = st.bg || "";
     } else if (refs.type === "bar") {
       const min = Number.isFinite(w.min) ? w.min : 0;
       const max = Number.isFinite(w.max) ? w.max : 100;
       const v = row ? Math.max(0, Math.min(100, ((Number(row.value) || 0) - min) / Math.max(max - min, 1e-9) * 100)) : 0;
       refs.lab.textContent = `${name} ${row ? row.display : "—"}`;
       refs.bar.style.width = v + "%";
+      refs.bar.style.background = st.color || "";
     } else if (refs.type === "gauge") {
       const min = Number.isFinite(w.min) ? w.min : 0;
       const max = Number.isFinite(w.max) ? w.max : 100;
       const v = row ? (Number(row.value) || 0) : min;
-      refs.gauge.innerHTML = gaugeSvg(v, min, max, row && row.alarm_level);
+      refs.gauge.innerHTML = gaugeSvg(v, min, max, row && row.alarm_level, st.color);
+    } else if (refs.type === "trend") {
+      const key = w.calc ? "calc:" + w.calc : `${w.poll}:${w.addr}`;
+      const num = row ? parseFloat(row.display) : NaN;
+      const h = sparkPushVal(key, num, st.blink);
+      refs.trend.innerHTML = trendSvg(h, w, st.color);
+      refs.lab.textContent = `${name} ${row ? row.display : "—"}`;
+    } else if (refs.type === "slider") {
+      // Не двигаем ползунок под рукой: пропускаем фокус и недавнее касание.
+      if (row && document.activeElement !== refs.slider &&
+          Date.now() - (refs.slTouch || 0) > 900) {
+        const raw = (row.raw != null) ? row.raw : Math.round(Number(row.value) || 0);
+        refs.slider.value = raw;
+      }
+      refs.slval.textContent = row ? row.display : "—";
     } else if (refs.type === "button") {
       const onV = w.onVal != null ? Number(w.onVal) : 1;
       const on = row && (row.raw || 0) === onV;
@@ -2250,7 +2370,31 @@ function updateSchemaTick() {
   }
 }
 
-function gaugeSvg(v, min, max, level) {
+/* Большой тренд виджета: автоось (или фикс. min/max из настроек), текущее
+   значение и вилки min/max за сессию. Цвет — от правила. */
+function trendSvg(h, w, color) {
+  const W = 200, H = 76;
+  const v = h && h.vals.length ? h.vals : [];
+  const lo = Number.isFinite(w.min) ? w.min : (h ? h.min : 0);
+  const hi = Number.isFinite(w.max) ? w.max : (h ? h.max : 1);
+  const span = Math.max(hi - lo, 1e-9);
+  const pts = v.map((y, i) =>
+    `${(i / Math.max(v.length - 1, 1) * (W - 6) + 3).toFixed(1)},${(H - 14 - ((y - lo) / span) * (H - 24)).toFixed(1)}`
+  ).join(" ");
+  const line = color || "var(--accent)";
+  const last = v.length ? v[v.length - 1] : null;
+  const txt = last == null ? "—" : String(Math.round(last * 100) / 100);
+  const mm = h && Number.isFinite(h.min)
+    ? `${Math.round(h.min * 100) / 100} … ${Math.round(h.max * 100) / 100}` : "";
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <line x1="0" y1="${H - 12}" x2="${W}" y2="${H - 12}" stroke="#1e293b"/>
+    ${pts ? `<polyline points="${pts}" fill="none" stroke="${line}" stroke-width="1.6"/>` : ""}
+    <text x="${W - 3}" y="11" text-anchor="end" class="ttxt">${esc(txt)}</text>
+    <text x="${W - 3}" y="${H - 2}" text-anchor="end" class="ttxt sub">${esc(mm)}</text>
+  </svg>`;
+}
+
+function gaugeSvg(v, min, max, level, ruleColor) {
   const span = Math.max(max - min, 1e-9);
   const t = Math.max(0, Math.min(1, ((Number(v) || 0) - min) / span));
   // Margins around the arc inside the viewBox so the colored stroke (with
@@ -2259,8 +2403,9 @@ function gaugeSvg(v, min, max, level) {
   const th = Math.PI * (1 - t);
   const x = cx + r * Math.cos(th), y = cy - r * Math.sin(th);
   const large = t > 0.5 ? 1 : 0;
-  const col = level === "hihi" || level === "hi" ? "#ef4444"
-    : level === "lolo" || level === "lo" ? "#3b82f6" : "#22d3ee";
+  // Цвет заливки: сработавшая ветка правила важнее уровня аварии.
+  const col = ruleColor || (level === "hihi" || level === "hi" ? "#ef4444"
+    : level === "lolo" || level === "lo" ? "#3b82f6" : "#22d3ee");
   const txt = Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 100) / 100) : "—";
   // Long values shrink instead of overflowing the widget.
   const fs = txt.length > 9 ? 11 : txt.length > 6 ? 13 : 15;
@@ -2273,6 +2418,7 @@ function gaugeSvg(v, min, max, level) {
 
 async function buttonWrite(w) {
   if (!hasTauri) { footer(t("write_only_app"), true); return; }
+  if (w.calc) { footer(t("wr_calc_ro"), true); return; }
   const row = liveMap()[w.poll + ":" + w.addr] || null;
   const onV = w.onVal != null ? Number(w.onVal) : 1;
   const offV = w.offVal != null ? Number(w.offVal) : 0;
@@ -2287,33 +2433,76 @@ async function buttonWrite(w) {
 }
 
 /* Двойной клик по элементу схемы — настройка: подпись, диапазоны, значения
-   кнопки. Поля собираются по типу; сохраняется в cfg.mimic. */
+   кнопки, шаг слайдера. Поля собираются по типу; сохраняется в cfg.mimic.
+   Для регистровых виджетов — кнопка «Правило для регистра» прямо отсюда. */
 function openWidgetModal(w) {
-  const fields = [["label", "Подпись", w.label || ""]];
-  if (w.type === "bar" || w.type === "gauge") {
-    fields.push(["min", "Минимум", w.min != null ? w.min : 0]);
-    fields.push(["max", "Максимум", w.max != null ? w.max : 100]);
+  const fields = [["label", t("w_label"), w.label || ""]];
+  if (w.type === "bar" || w.type === "gauge" || w.type === "trend") {
+    fields.push(["min", t("w_min"), w.min != null ? w.min : ""]);
+    fields.push(["max", t("w_max"), w.max != null ? w.max : ""]);
   }
-  if (w.type === "gauge") fields.push(["unit", "Единицы", w.unit || ""]);
+  if (w.type === "gauge") fields.push(["unit", t("w_unit"), w.unit || ""]);
+  if (w.type === "slider") {
+    fields.push(["min", t("w_min"), w.min != null ? w.min : 0]);
+    fields.push(["max", t("w_max"), w.max != null ? w.max : 1000]);
+    fields.push(["step", t("w_step"), w.step != null ? w.step : 1]);
+  }
   if (w.type === "button") {
-    fields.push(["onVal", "Значение «вкл»", w.onVal != null ? w.onVal : 1]);
-    fields.push(["offVal", "Значение «выкл»", w.offVal != null ? w.offVal : 0]);
-    fields.push(["btnLabel", "Надпись", w.btnLabel || ""]);
+    fields.push(["onVal", t("w_onval"), w.onVal != null ? w.onVal : 1]);
+    fields.push(["offVal", t("w_offval"), w.offVal != null ? w.offVal : 0]);
+    fields.push(["btnLabel", t("w_btnlabel"), w.btnLabel || ""]);
   }
   const box = $("wfields");
   box.innerHTML = fields.map(([id, lab, val]) =>
     `<label>${esc(lab)} <input id="wf_${id}" value="${esc(val)}" /></label>`).join("");
+  // Правила уже красят виджеты; отсюда они создаются в один клик.
+  let rb = $("wRuleBtn");
+  if (!rb) {
+    rb = document.createElement("button");
+    rb.id = "wRuleBtn";
+    rb.type = "button";
+    rb.className = "mini";
+    rb.textContent = t("w_rule_btn");
+    $("wmodal").querySelector(".modal-actions").prepend(rb);
+  }
+  rb.hidden = w.calc != null;
+  rb.onclick = () => { $("wmodal").hidden = true; openRuleFor(w.poll, w.addr); };
   $("wmodal").hidden = false;
   $("wmodalOk").onclick = () => {
     for (const [id] of fields) {
       const raw = $("wf_" + id).value;
+      // Пустое поле = авто (напр. автоось тренда), а не 0.
       if (id === "label" || id === "btnLabel" || id === "unit") w[id] = raw;
-      else w[id] = Number(raw);
+      else w[id] = raw === "" ? null : Number(raw);
     }
     $("wmodal").hidden = true;
     renderSchema();
   };
   $("wmodalCancel").onclick = () => { $("wmodal").hidden = true; };
+}
+
+// Слайдер виджета пишет raw-регистр (диапазон настраивается в виджете).
+async function sliderWrite(w, v) {
+  if (!hasTauri) { footer(t("write_only_app"), true); return; }
+  if (w.calc) { footer(t("wr_calc_ro"), true); return; }
+  try {
+    await invoke("write_value", { pollId: w.poll, addr: w.addr, value: Math.round(v) & 0xffff });
+    footer(tfmt("wrote", { addr: w.addr, v }));
+    refresh();
+  } catch (e) { footer(String(e), true); }
+}
+
+/* Из SCADA в правила одним кликом: открывает форму ветки с выбранным
+   регистром — правила на схеме заводятся без охоты за левой панелью. */
+function openRuleFor(pollId, addr) {
+  const det = [...document.querySelectorAll("details")]
+    .find((d) => d.querySelector("#ruleForm"));
+  if (det) det.open = true;
+  const sel = $("rReg");
+  const val = `${pollId}:${addr}`;
+  if (sel && [...sel.options].some((o) => o.value === val)) sel.value = val;
+  if (det) det.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  footer(t("rule_prefill") + val);
 }
 
 function startDrag(ev, w, el) {
@@ -2342,5 +2531,197 @@ window.addEventListener("mouseup", () => {
   if (wdrag) { wdrag = null; watchSavePos(); }
   drag = null;
 });
+
+/* ------------------------------------------------------------ tutorial -- */
+/* Интерактивный тур по программе: реальный интерфейс, над ним тонкое
+   затемнение, рамка-«вырез» вокруг целевого элемента и карточка шага.
+   Шаги с условием adv() закрываются сами, как только пользователь сделал
+   действие (добавил соединение/опрос/правило, запустил движок или slave);
+   остальные — кнопками. Фон не блокируется: фоном можно работать. */
+const TUT = { i: 0, active: false, el: null, steps: [] };
+
+function tutSteps() {
+  return [
+    { sel: null, t: t("t_welcome_t"), b: t("t_welcome_b"), demo: true },
+    { sel: "#detConn", t: t("t_conn_t"), b: t("t_conn_b"), adv: () => cfg.connections.length > 0 },
+    { sel: "#detPoll", t: t("t_poll_t"), b: t("t_poll_b"), adv: () => cfg.polls.length > 0 },
+    { sel: "#btnStart", t: t("t_start_t"), b: t("t_start_b"), adv: () => !!(snap && snap.running) },
+    { sel: "#grid", tab: "tables", t: t("t_tables_t"), b: t("t_tables_b") },
+    { sel: "#ruleForm", t: t("t_rules_t"), b: t("t_rules_b"), adv: () => cfg.rules.length > 0 },
+    { sel: "#viewSchema", tab: "schema", t: t("t_schema_t"), b: t("t_schema_b"), adv: () => (cfg.mimic || []).length > 0 },
+    { sel: "#viewSlave", tab: "slave", t: t("t_slave_t"), b: t("t_slave_b"), adv: () => SLV.running },
+    { sel: ".alarms", t: t("t_alarms_t"), b: t("t_alarms_b") },
+    { sel: null, t: t("t_done_t"), b: t("t_done_b"), demo: true, final: true },
+  ];
+}
+
+function tourStart(i = 0) {
+  TUT.steps = tutSteps();
+  TUT.active = true;
+  TUT.i = Math.max(0, Math.min(i, TUT.steps.length - 1));
+  $("tour").hidden = false;
+  tourShow();
+}
+
+function tourEnd(done) {
+  TUT.active = false;
+  $("tour").hidden = true;
+  if (done) { try { localStorage.setItem("mbscada.tourDone", "1"); } catch { /* ignore */ } }
+}
+
+function tourShow() {
+  const s = TUT.steps[TUT.i];
+  if (s.tab) switchTab(s.tab);
+  TUT.el = s.sel ? document.querySelector(s.sel) : null;
+  $("tourStep").textContent = tfmt("t_step_of", { n: TUT.i + 1, m: TUT.steps.length });
+  $("tourTitle").textContent = s.t;
+  $("tourText").textContent = s.b;
+  $("tourPrev").disabled = TUT.i === 0;
+  $("tourNext").textContent = s.final ? t("t_finish") : t("tour_next");
+  $("tourDemo").hidden = !s.demo;
+  tourPlace();
+}
+
+function tourPlace() {
+  if (!TUT.active) return;
+  const hole = $("tourHole"), card = $("tourCard");
+  const r = TUT.el && TUT.el.getBoundingClientRect();
+  const vis = r && r.width > 0 && r.height > 0 &&
+    r.bottom > 40 && r.top < window.innerHeight - 40;
+  if (vis) {
+    const pad = 6;
+    hole.style.display = "block";
+    hole.style.left = (r.left - pad) + "px";
+    hole.style.top = (r.top - pad) + "px";
+    hole.style.width = (r.width + pad * 2) + "px";
+    hole.style.height = (r.height + pad * 2) + "px";
+    // Карточка — рядом с целью: справа, затем слева, затем центр.
+    const cw = 340, ch = card.offsetHeight || 160;
+    let x = r.right + 16, y = r.top - 8;
+    if (x + cw > window.innerWidth - 10) x = Math.max(10, r.left - cw - 16);
+    if (x + cw > window.innerWidth - 10) x = Math.max(10, (window.innerWidth - cw) / 2);
+    if (y + ch > window.innerHeight - 10) y = Math.max(10, window.innerHeight - ch - 12);
+    if (y < 52) y = 52;
+    card.style.left = x + "px";
+    card.style.top = y + "px";
+  } else {
+    hole.style.display = "none";
+    card.style.left = Math.max(10, (window.innerWidth - 340) / 2) + "px";
+    card.style.top = "30vh";
+  }
+}
+
+function tourNext() {
+  if (TUT.i >= TUT.steps.length - 1) { tourEnd(true); return; }
+  TUT.i++;
+  tourShow();
+}
+
+function tourPrev() {
+  if (TUT.i > 0) { TUT.i--; tourShow(); }
+}
+
+// Тик из refresh(): перепозиционировать рамку и проверить условие шага.
+function tourTick() {
+  if (!TUT.active) return;
+  tourPlace();
+  const s = TUT.steps[TUT.i];
+  if (s && s.adv && s.adv()) tourNext();
+}
+
+function tourWire() {
+  const bt = $("btnTour");
+  if (bt) bt.onclick = () => tourStart(0);
+  const td = $("tourDemo");
+  if (td) td.onclick = () => demoProject();
+  const tn = $("tourNext");
+  if (tn) tn.onclick = tourNext;
+  const tp = $("tourPrev");
+  if (tp) tp.onclick = tourPrev;
+  const ts = $("tourSkip");
+  if (ts) ts.onclick = () => tourEnd(true);
+  window.addEventListener("resize", tourPlace);
+}
+
+function switchTab(v) {
+  const tab = document.querySelector(`.tab[data-view="${v}"]`);
+  if (tab) tab.click();
+}
+
+/* Демо-проект: приложение поднимает собственный slave-симулятор (TCP 10502,
+   синус) и опрашивает его само — живые таблицы, правила с текстом веток,
+   вычисляемый тэг и обжитая SCADA-схема без единого провода. */
+async function demoProject() {
+  if (!hasTauri) { footer(t("no_tauri"), true); return; }
+  if (cfg.connections.length || cfg.polls.length || (cfg.mimic || []).length) {
+    if (!window.confirm(t("demo_confirm"))) return;
+  }
+  const L = window.LANG === "en" ? "en" : "ru";
+  // Slave: TCP 10502, holding 0..15, синус 0..90 — правила срабатывают сами.
+  const g = slaveCfg();
+  Object.assign(g, {
+    mode: "tcp", rtu: false, port: 10502, unit: 1, area: "holding",
+    addr: 0, qty: 16, fmt: "u16", gen: "sine", genAmp: 45, genBase: 45, genPeriod: 14,
+  });
+  g.serial = { port: "", baud: 9600, parity: "E", data: 8, stop: 1 };
+  slaveSyncForm();
+  cfg.connections = [{
+    id: "cdemo", name: "Loopback", kind: "tcp", host: "127.0.0.1", port: 10502,
+    serial: { port: "", baud: 9600, data_bits: 8, parity: "N", stop_bits: 1 },
+    timeout_ms: 800, slave: 1,
+  }];
+  const labels = L === "en"
+    ? { "0": "T1 reactor", "2": "T2 jacket", "4": "P1 line", "6": "F1 flow",
+        "8": "Valve", "10": "LVL tank", "12": "T3 stack", "20": "SP setpoint" }
+    : { "0": "T1 реактор", "2": "T2 рубашка", "4": "P1 линия", "6": "F1 расход",
+        "8": "Клапан", "10": "LVL бак", "12": "T3 труба", "20": "SP уставка" };
+  cfg.polls = [{
+    id: 1, name: L === "en" ? "Reactor" : "Реактор", conn_id: "cdemo", slave: 0,
+    func: 3, start: 0, raw_start: 0, qty: 24, scan_ms: 300, fmt: "u16",
+    mult: 1, div: 1, offset: 0, unit: "", base_one: false, notation: "raw",
+    enabled: true, labels, alarms: {},
+  }];
+  const R = (en, ru) => (L === "en" ? en : ru);
+  cfg.rules = [
+    { id: 1, name: "overheat", poll: 1, offset: 0, cond: { kind: "ge", v: 75 },
+      fg: "#ffffff", bg: "#ef4444", blink: true, severity: "critical",
+      message: R("T1 overheat", "Перегрев T1"), text: R("OVERHEAT", "ПЕРЕГРЕВ") },
+    { id: 2, name: "warm", poll: 1, offset: 0, cond: { kind: "ge", v: 62 },
+      fg: "#1c1917", bg: "#f59e0b", blink: false, severity: "warning",
+      message: R("T1 warm", "T1 горячо"), text: R("WARM", "ГОРЯЧО") },
+    { id: 3, name: "cold", poll: 1, offset: 0, cond: { kind: "lt", v: 15 },
+      fg: "#eff6ff", bg: "#3b82f6", blink: false, severity: "info",
+      message: R("T1 cold", "T1 холодно"), text: R("COLD", "ХОЛОД") },
+    { id: 4, name: "valve-open", poll: 1, offset: 4, cond: { kind: "bit", n: 0, set: true },
+      fg: "#f0fdf4", bg: "#16a34a", blink: false, severity: null,
+      message: R("valve open", "клапан открыт"), text: R("OPEN", "ОТКРЫТ") },
+    { id: 5, name: "valve-closed", poll: 1, offset: 4, cond: { kind: "always" },
+      fg: "#e2e8f0", bg: "#475569", blink: false, severity: null,
+      message: R("valve closed", "клапан закрыт"), text: R("CLOSED", "ЗАКРЫТ") },
+    { id: 6, name: "lvl-band", poll: 1, offset: 5, cond: { kind: "outside_range", lo: 20, hi: 70 },
+      fg: "#1c1917", bg: "#f59e0b", blink: false, severity: "warning",
+      message: R("level out of band", "уровень вне нормы"), text: null },
+  ];
+  cfg.computed = [{ name: "ΔT", expr: `{${labels["2"]}} - {${labels["0"]}}`, unit: "°C", decimals: 1 }];
+  // Адрес 20 — вне зоны генератора: записи слайдера не затираются.
+  cfg.mimic = [
+    { id: 1, type: "gauge", x: 16, y: 12, poll: 1, addr: 0, label: labels["0"], min: 0, max: 100, unit: "°C" },
+    { id: 2, type: "trend", x: 216, y: 12, poll: 1, addr: 0, label: labels["0"] },
+    { id: 3, type: "lamp", x: 452, y: 24, poll: 1, addr: 4, label: labels["8"] },
+    { id: 4, type: "state", x: 16, y: 190, poll: 1, addr: 4, label: labels["8"] },
+    { id: 5, type: "bar", x: 168, y: 196, poll: 1, addr: 1, label: labels["2"], min: 0, max: 100 },
+    { id: 6, type: "value", x: 366, y: 196, calc: "ΔT", label: "ΔT" },
+    { id: 7, type: "slider", x: 452, y: 112, poll: 1, addr: 20, label: labels["20"], min: 0, max: 200, step: 1 },
+  ];
+  GRID.sig = null;
+  SC.sig = null;
+  await apply();
+  await slaveStop();
+  await slaveStart();
+  await startPolling();
+  switchTab("schema");
+  footer(t("demo_done"));
+  if (TUT.active && TUT.steps.length) { TUT.i = TUT.steps.length - 1; tourShow(); }
+}
 
 boot();
