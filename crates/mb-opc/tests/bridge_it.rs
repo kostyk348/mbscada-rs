@@ -12,7 +12,8 @@ use opcua::client::prelude::*;
 use opcua::server::prelude::*;
 use opcua::types::service_types::{ReadValueId, TimestampsToReturn};
 use opcua::types::AttributeId;
-use std::sync::{Arc, RwLock};
+use opcua::sync::RwLock;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 fn free_port() -> u16 {
@@ -51,7 +52,7 @@ fn read_value(session: &Arc<RwLock<Session>>, id: &NodeId) -> DataValue {
         index_range: UAString::null(),
         data_encoding: QualifiedName::new(0, ""),
     };
-    let s = session.write().unwrap();
+    let s = session.write();
     s.read(&[rv], TimestampsToReturn::Both, 0.0).expect("read ok").remove(0)
 }
 

@@ -7,10 +7,10 @@
 use mb_engine::model::{func_is_read, Poll};
 use mb_engine::{ComputedTag, Engine};
 use opcua::server::prelude::*;
+use opcua::sync::RwLock;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use std::sync::Arc;
 
 /// The subset of the desktop app's project JSON the bridge needs. Unknown
 /// keys are ignored, `rules`/`computed` default to empty.
@@ -77,7 +77,7 @@ pub fn build_server_and_space(
 
     let mut nodes: Vec<NodeRef> = Vec::new();
     {
-        let mut sp = asp.write().unwrap();
+        let mut sp = asp.write();
         let ns = sp
             .register_namespace(crate::NAMESPACE_URI)
             .expect("namespace not registered yet");
@@ -173,8 +173,8 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
     let calc_by_name: HashMap<&str, &mb_engine::ComputedView> =
         snap.computed.iter().map(|c| (c.name.as_str(), c)).collect();
 
-    let mut sp = asp.write().unwrap();
-    let now = DateTime::from(SystemTime::now());
+    let mut sp = asp.write();
+    let now = DateTime::now();
     for n in nodes {
         match &n.kind {
             NodeKind::Tag { key, is_bits } => {
@@ -189,17 +189,17 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
                         (v, StatusCode::Good)
                     }
                     "off" => (Variant::Double(0.0), StatusCode::UncertainLastUsableValue),
-                    _ => (Variant::Double(0.0), StatusCode::BadCommFailure),
+                    _ => (Variant::Double(0.0), StatusCode::BadCommunicationError),
                 };
                 if let Some(var) = sp.find_variable_mut_by_ref(&n.id) {
-                    let _ = var.set_value_direct(variant, status, now, now);
+                    let _ = var.set_value_direct(variant, status, &now, &now);
                 }
             }
             NodeKind::Calc { name } => {
                 let Some(c) = calc_by_name.get(name.as_str()) else { continue };
                 let status = if c.ok { StatusCode::Good } else { StatusCode::Bad };
                 if let Some(var) = sp.find_variable_mut_by_ref(&n.id) {
-                    let _ = var.set_value_direct(Variant::Double(c.value), status, now, now);
+                    let _ = var.set_value_direct(Variant::Double(c.value), status, &now, &now);
                 }
             }
             NodeKind::Online { conn } => {
@@ -208,8 +208,8 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
                         let _ = var.set_value_direct(
                             Variant::Boolean(c.stats.online),
                             StatusCode::Good,
-                            now,
-                            now,
+                            &now,
+                            &now,
                         );
                     }
                 }
@@ -221,8 +221,8 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
                         _ => c.stats.errors,
                     };
                     if let Some(var) = sp.find_variable_mut_by_ref(&n.id) {
-                        let _ =
-                            var.set_value_direct(Variant::UInt64(v), StatusCode::Good, now, now);
+                        let _ = var
+                            .set_value_direct(Variant::UInt64(v), StatusCode::Good, &now, &now);
                     }
                 }
             }

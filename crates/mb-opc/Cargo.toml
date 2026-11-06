@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 mb-engine = { path = "../mb-engine" }
 opcua = { version = "0.12", default-features = false, features = ["server"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Non-Linux runners (Windows CI, macOS release job) have no usable system
