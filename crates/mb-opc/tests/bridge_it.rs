@@ -6,10 +6,12 @@
 //! status variables.
 
 use mb_engine::coalesce::merge_polls;
+use mb_sim::Sim;
 use mb_engine::{Engine, EngineCfg};
 use mb_opc::bridge::{build_server_and_space, pump, Project};
 use opcua::client::prelude::*;
 use opcua::server::prelude::*;
+use opcua::client::config::ANONYMOUS_USER_TOKEN_ID;
 use opcua::types::service_types::{ReadValueId, TimestampsToReturn};
 use opcua::types::AttributeId;
 use opcua::sync::RwLock;
