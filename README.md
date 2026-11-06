@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/mascot.png" alt="mbSCADA mascot — the girl with goggles, headset and gears" width="180">
+<img src="assets/mascot.png" alt="mbSCADA icon — mascot girl with orange visor and headset, mbscada-rs badge" width="180">
 
 # 📡 mbSCADA
 
