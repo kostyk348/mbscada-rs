@@ -50,3 +50,24 @@ jobs:
           releaseBody: 'Installers and portable binaries for all supported platforms. See the assets below.'
           releaseDraft: false
           prerelease: false
+
+      # The OPC UA bridge is a plain cargo binary — built natively on every
+      # release runner and attached to the same release (the tauri-action
+      # step above has created it by now).
+      - name: Upload mb-opc bridge binary
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo build --release -p mb-opc
+          TAG="${GITHUB_REF#refs/tags/}"
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            Linux-X64)   NAME=mb-opc-linux-x64 ;;
+            Linux-ARM64) NAME=mb-opc-linux-arm64 ;;
+            macOS-ARM64) NAME=mb-opc-macos-arm64 ;;
+            Windows-X64) NAME=mb-opc-windows-x64.exe ;;
+            *)           NAME=mb-opc-unknown ;;
+          esac
+          cp "target/release/mb-opc${{ runner.os == 'Windows' && '.exe' || '' }}" "$NAME"
+          gh release upload "$TAG" "$NAME" --clobber --repo "$GITHUB_REPOSITORY"

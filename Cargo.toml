@@ -5,6 +5,7 @@ members = [
     "crates/mb-proto",
     "crates/mb-sim",
     "crates/mb-engine",
+    "crates/mb-opc",
     "apps/mbscada/src-tauri",
 ]
 default-members = [
@@ -12,10 +13,11 @@ default-members = [
     "crates/mb-proto",
     "crates/mb-sim",
     "crates/mb-engine",
+    "crates/mb-opc",
 ]
 
 [workspace.package]
-version = "1.5.2"
+version = "1.6.0"
 edition = "2021"
 license = "MIT"
 authors = ["Konstantin"]

@@ -1,0 +1,24 @@
+[package]
+name = "mb-opc"
+description = "OPC UA bridge: serves an mbSCADA project (Modbus connections, polls, computed tags) as an OPC UA server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mb-opc"
+path = "src/main.rs"
+
+[dependencies]
+mb-engine = { path = "../mb-engine" }
+opcua = { version = "0.12", default-features = false, features = ["server", "console-logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Non-Linux runners (Windows CI, macOS release job) have no usable system
+# OpenSSL — vendor a static build there. Linux uses the system libssl.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+opcua = { version = "0.12", default-features = false, features = ["server", "vendored-openssl", "console-logging"] }
+
+[dev-dependencies]
+mb-sim = { path = "../mb-sim" }
