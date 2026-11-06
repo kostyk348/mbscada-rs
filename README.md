@@ -43,6 +43,8 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 - 🗄 **Journal + archive + diagnostics.** Engine events (RX/WR/ERR/SYS) appended to a log file, configurable CSV historian (change-only or interval mode), per-connection/per-poll diagnostics with reconnect counters (v1.1).
 - 🌐 **RU/EN built in.** One switch in the toolbar flips the entire UI; docs ship in both languages.
 - ⚡ **Fast & local.** A multithreaded engine (`mb-engine`) drives all connections concurrently; no telemetry, no cloud, nothing leaves the machine.
+- 🎓 **Tutorial + demo project.** An interactive tour that highlights real UI elements and auto-advances once you've done the step — plus a "🚀 Demo project" button: the app raises its own slave simulator and polls itself, so live tables, rules, a computed tag and a dressed-up mimic come alive in 10 seconds (v1.5).
+- 🎛 **Rules on the mimic + new widgets.** Lamps, gauges, bars and values are colored by the fired rule branch (color/text/blink) — exactly like table rows; the "State" widget shows the branch text ("OPEN/CLOSED"), trends plot the history with min/max spans, sliders write a value into a register, computed tags became a widget source, and a "Rule for register…" button sits right in the widget settings (v1.5).
 
 <details open>
 <summary><b>👀 30-second tour</b></summary>
@@ -57,7 +59,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 </details>
 
-## ⬇ Download v1.4.3
+## ⬇ Download v1.5.0
 
 Prebuilt installers for every platform — no Rust toolchain needed.
 Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
