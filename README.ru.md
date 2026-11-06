@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/mascot.png" alt="Маскот mbSCADA — девочка в очках-гоглах, с гарнитурой и шестерёнками" width="180">
+<img src="assets/mascot.png" alt="Иконка mbSCADA — маскот-девушка в оранжевом визоре и гарнитуре, бейдж mbscada-rs" width="180">
 
 # 📡 mbSCADA
 
