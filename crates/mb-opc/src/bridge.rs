@@ -8,10 +8,10 @@ use mb_engine::model::{func_is_read, Poll};
 use mb_engine::{ComputedTag, Engine, Fmt};
 use opcua::server::callbacks::AttributeSetter;
 use opcua::server::prelude::*;
-use opcua::sync::RwLock;
+use opcua::sync::{Mutex, RwLock};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// The subset of the desktop app's project JSON the bridge needs. Unknown
 /// keys are ignored, `rules`/`computed` default to empty.
