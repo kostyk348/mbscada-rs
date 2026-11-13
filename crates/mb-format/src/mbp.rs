@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::model::{decode_addr, notation_str, valid_func, Row, Table};
-use crate::util::{iter_markers, push_str_marker, push_u32, rd32, PAD, MARKER};
+use crate::util::{iter_markers, push_str_marker, push_u32, rd32, MARKER, PAD};
 
 pub const MAGIC_MBP_V4: u32 = 7000;
 pub const MAGIC_MBP_V5: u32 = 10010;
@@ -86,7 +86,9 @@ pub fn parse_mbp(data: &[u8], path: &str, name: &str) -> Result<Table> {
     // Addresses 0xFFF0..=0xFFFF are not register windows (they are address-list /
     // connection records that also use the .mbp extension).
     if raw_addr >= 0xFFF0 {
-        return Err(Error::Parse(format!("не окно регистров (адрес 0x{raw_addr:04X})")));
+        return Err(Error::Parse(format!(
+            "не окно регистров (адрес 0x{raw_addr:04X})"
+        )));
     }
     let (addr, notation) = decode_addr(raw_addr, func);
     let qty = qty_raw.clamp(1, 125);
@@ -185,7 +187,11 @@ pub fn write_mbp(t: &Table) -> Vec<u8> {
     push_u32(&mut out, 1);
     push_u32(&mut out, 0);
     push_u32(&mut out, 0);
-    let qty = if t.qty > 0 { t.qty } else { t.rows.len() as u32 };
+    let qty = if t.qty > 0 {
+        t.qty
+    } else {
+        t.rows.len() as u32
+    };
     push_u32(&mut out, qty);
 
     // 16 trailing bytes, then the closing empty marker (real files end with

@@ -109,7 +109,11 @@ mod tests {
         let mut f = encode(0x01, &[0x03, 0x00, 0x00, 0x00, 0x03]);
         // flip a hex char inside the payload
         let at = 5;
-        if f[at] == b'0' { f[at] = b'1' } else { f[at] = b'0' };
+        if f[at] == b'0' {
+            f[at] = b'1'
+        } else {
+            f[at] = b'0'
+        };
         assert!(matches!(parse(&f), Err(ProtoError::Lrc { .. })));
     }
 

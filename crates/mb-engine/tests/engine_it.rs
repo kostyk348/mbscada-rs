@@ -130,16 +130,15 @@ fn rtu_over_tcp_uses_same_framing() {
 
 #[test]
 fn disconnected_is_reported() {
-    let eng = Engine::start(
-        vec![conn("c1", ConnKind::Tcp, 1)],
-        vec![poll("c1")],
-        vec![],
-    );
+    let eng = Engine::start(vec![conn("c1", ConnKind::Tcp, 1)], vec![poll("c1")], vec![]);
     std::thread::sleep(Duration::from_millis(1200));
     let snap = eng.snapshot();
     assert!(!snap.connections[0].stats.online, "must not claim online");
     assert!(snap.connections[0].stats.errors >= 1, "errors counted");
-    assert!(!snap.connections[0].stats.last_error.is_empty(), "error surfaced");
+    assert!(
+        !snap.connections[0].stats.last_error.is_empty(),
+        "error surfaced"
+    );
 }
 
 /// Two branches on the same target: the first matching branch wins
@@ -177,7 +176,11 @@ fn branch_order_and_dynamic_text() {
     let snap = eng.snapshot();
     let row = &snap.polls[0].rows[0];
     assert_eq!(row.value, 150.0);
-    assert_eq!(row.bg.as_deref(), Some("#22c55e"), "first matching branch wins");
+    assert_eq!(
+        row.bg.as_deref(),
+        Some("#22c55e"),
+        "first matching branch wins"
+    );
     assert_eq!(row.name, "ГОТОВ", "branch text replaces the row label");
     // The poll's AlarmSpec (hihi=100) is independent of style branches and
     // still reports its threshold alarm.
@@ -216,7 +219,11 @@ fn thirty_two_branches_per_row() {
     let row = &snap.polls[0].rows[0];
     // value 150 matches branches with threshold <= 150; ordered evaluation
     // keeps the LOWEST threshold (id 0) in force.
-    assert_eq!(row.bg.as_deref(), Some("#100000"), "branch order = list order");
+    assert_eq!(
+        row.bg.as_deref(),
+        Some("#100000"),
+        "branch order = list order"
+    );
 }
 
 // ------------------------------------------------- computed tags + log file
@@ -327,7 +334,11 @@ fn typed_poll_f32_row_regs_and_typed_write() {
     let rows = &snap.polls[0].rows;
     assert_eq!(rows.len(), 2, "4 registers -> 2 float rows");
     assert_eq!(rows[0].value, 1.0);
-    assert_eq!(rows[0].regs, vec![0x3F80, 0x0000], "row carries its registers");
+    assert_eq!(
+        rows[0].regs,
+        vec![0x3F80, 0x0000],
+        "row carries its registers"
+    );
     assert_eq!(rows[1].value, -2.0);
     assert_eq!(rows[0].scaled, 1.0, "scaled present for the UI");
 

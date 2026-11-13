@@ -173,14 +173,26 @@ mod tests {
     #[test]
     fn mbrs_style_formats() {
         // hex32: 0xDEADBEEF over words ABCD
-        assert_eq!(decode(&[0xDEAD, 0xBEEF], Fmt::Hex32), vec![0xDEADBEEFu32 as f64]);
-        assert_eq!(display(0xDEAD, 0xDEADBEEFu32 as f64, Fmt::Hex32, 1.0, 1.0, 0.0), "0xDEADBEEF");
+        assert_eq!(
+            decode(&[0xDEAD, 0xBEEF], Fmt::Hex32),
+            vec![0xDEADBEEFu32 as f64]
+        );
+        assert_eq!(
+            display(0xDEAD, 0xDEADBEEFu32 as f64, Fmt::Hex32, 1.0, 1.0, 0.0),
+            "0xDEADBEEF"
+        );
         // ascii16: 0x4142 -> "AB"
-        assert_eq!(display(0x4142, 0x4142 as f64, Fmt::Ascii16, 1.0, 1.0, 0.0), "AB");
+        assert_eq!(
+            display(0x4142, 0x4142 as f64, Fmt::Ascii16, 1.0, 1.0, 0.0),
+            "AB"
+        );
         // u16 swapped: 0x1234 -> 0x3412
         assert_eq!(decode(&[0x1234], Fmt::U16Swapped), vec![0x3412 as f64]);
         // u64: 0x0000000100000002 -> words [0x0000, 0x0001, 0x0000, 0x0002]
-        assert_eq!(decode(&[0, 0x0001, 0, 0x0002], Fmt::U64), vec![0x0000000100000002u64 as f64]);
+        assert_eq!(
+            decode(&[0, 0x0001, 0, 0x0002], Fmt::U64),
+            vec![0x0000000100000002u64 as f64]
+        );
         // i64: -1 = 0xFFFFFFFFFFFFFFFF
         assert_eq!(decode(&[0xFFFF; 4], Fmt::I64), vec![-1.0]);
         // f64: 1.0 = 0x3FF0000000000000 -> words 0x3FF0,0,0,0

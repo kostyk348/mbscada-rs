@@ -6,14 +6,14 @@
 //! status variables.
 
 use mb_engine::coalesce::merge_polls;
-use mb_sim::Sim;
 use mb_engine::{Engine, EngineCfg};
 use mb_opc::bridge::{build_server_and_space, pump, Project};
+use mb_sim::Sim;
 use opcua::client::prelude::*;
 use opcua::server::prelude::*;
-use opcua::types::service_types::{ReadValueId, TimestampsToReturn};
-use opcua::types::AttributeId;
 use opcua::sync::RwLock;
+use opcua::types::service_types::{ReadValueId, TimestampsToReturn, WriteValue};
+use opcua::types::AttributeId;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -54,7 +54,9 @@ fn read_value(session: &Arc<RwLock<Session>>, id: &NodeId) -> DataValue {
         data_encoding: QualifiedName::new(0, ""),
     };
     let s = session.write();
-    s.read(&[rv], TimestampsToReturn::Both, 0.0).expect("read ok").remove(0)
+    s.read(&[rv], TimestampsToReturn::Both, 0.0)
+        .expect("read ok")
+        .remove(0)
 }
 
 fn as_f64(dv: &DataValue) -> f64 {
@@ -105,7 +107,11 @@ fn bridge_end_to_end() {
     let project: Project = serde_json::from_str(&raw).expect("project parses");
     let merged = merge_polls(&project.polls, 0);
     let fc3: Vec<_> = merged.iter().filter(|p| p.func == 3).collect();
-    assert_eq!(fc3.len(), 2, "p1+p2 coalesce into one range, p3 stays alone");
+    assert_eq!(
+        fc3.len(),
+        2,
+        "p1+p2 coalesce into one range, p3 stays alone"
+    );
     assert_eq!((fc3[0].start, fc3[0].qty), (0, 4));
     assert_eq!(merged.len(), 3, "3 transactions per cycle instead of 4");
 
@@ -120,7 +126,7 @@ fn bridge_end_to_end() {
 
     let opc_port = free_port();
     let (server, nodes, asp) =
-        build_server_and_space(&project, &format!("127.0.0.1:{opc_port}"));
+        build_server_and_space(&project, &format!("127.0.0.1:{opc_port}"), &engine);
     let server = Arc::new(RwLock::new(server));
     std::thread::spawn(move || Server::run_server(server));
     std::thread::sleep(Duration::from_millis(800));
@@ -161,13 +167,28 @@ fn bridge_end_to_end() {
         if values.iter().all(|v| v.status == Some(StatusCode::Good)) {
             break;
         }
-        assert!(Instant::now() < deadline, "tags never went good: {values:?}");
+        assert!(
+            Instant::now() < deadline,
+            "tags never went good: {values:?}"
+        );
         std::thread::sleep(Duration::from_millis(250));
     }
 
-    assert!((as_f64(&values[0]) - 25.5).abs() < 1e-4, "T reactor = 25.5, got {}", values[0].value.clone().unwrap());
-    assert!((as_f64(&values[1]) - 12.3).abs() < 1e-4, "P inlet = f32 12.3, got {}", values[1].value.clone().unwrap());
-    assert!((as_f64(&values[2]) - 10000.0).abs() < 1e-9, "N batches = 10000, got {}", values[2].value.clone().unwrap());
+    assert!(
+        (as_f64(&values[0]) - 25.5).abs() < 1e-4,
+        "T reactor = 25.5, got {}",
+        values[0].value.clone().unwrap()
+    );
+    assert!(
+        (as_f64(&values[1]) - 12.3).abs() < 1e-4,
+        "P inlet = f32 12.3, got {}",
+        values[1].value.clone().unwrap()
+    );
+    assert!(
+        (as_f64(&values[2]) - 10000.0).abs() < 1e-9,
+        "N batches = 10000, got {}",
+        values[2].value.clone().unwrap()
+    );
     assert!(as_bool(&values[3]), "V5 open = true");
 
     // Live update: change a register, the value must follow.
@@ -193,11 +214,18 @@ fn bridge_end_to_end() {
             // 26.0 / 12.3 ≈ 2.11; guard against the initial 0/0 state
             break;
         }
-        assert!(Instant::now() < deadline, "computed tag never updated: {v:?}");
+        assert!(
+            Instant::now() < deadline,
+            "computed tag never updated: {v:?}"
+        );
         std::thread::sleep(Duration::from_millis(250));
     }
     let calc = read_value(&session, &ns2("calc:0"));
-    assert!((as_f64(&calc) - 26.0 / 12.3).abs() < 1e-4, "calc = T/P, got {}", calc.value.unwrap());
+    assert!(
+        (as_f64(&calc) - 26.0 / 12.3).abs() < 1e-4,
+        "calc = T/P, got {}",
+        calc.value.unwrap()
+    );
 
     // Status variables: online, and tx grows (engine is polling).
     let online = read_value(&session, &ns2("conn:c1:online"));
@@ -208,6 +236,63 @@ fn bridge_end_to_end() {
     pump(&engine, &asp, &nodes);
     let tx2 = as_u64(&read_value(&session, &ns2("conn:c1:tx")));
     assert!(tx2 >= tx1 + 3, "tx grows over time ({} -> {})", tx1, tx2);
+
+    // Write-back: a client write must land as a Modbus write in the
+    // simulator — FC16 multi-register for a u32 row, FC5 coil for a bit row.
+    let write_dv = |v: Variant| DataValue {
+        value: Some(v),
+        status: None,
+        source_timestamp: None,
+        server_timestamp: None,
+        source_picoseconds: None,
+        server_picoseconds: None,
+    };
+    let wv = |id: &NodeId, v: Variant| WriteValue {
+        node_id: id.clone(),
+        attribute_id: AttributeId::Value as u32,
+        index_range: UAString::null(),
+        value: write_dv(v),
+    };
+    let s = session.write();
+    let statuses = s
+        .write(&[
+            wv(&ns2("p3:20"), Variant::Double(12345.0)),
+            wv(&ns2("p4:5"), Variant::Boolean(false)),
+        ])
+        .expect("client write accepted");
+    assert!(
+        statuses.iter().all(|s| *s == StatusCode::Good),
+        "both writes good: {statuses:?}"
+    );
+    // FC16 wrote the u32 12345 (0x00003039) at 20..21; FC5 closed V5.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        pump(&engine, &asp, &nodes);
+        let h20 = mb_srv.sim.lock().unwrap().holding[20] as u32;
+        let h21 = mb_srv.sim.lock().unwrap().holding[21] as u32;
+        let coil5 = mb_srv.sim.lock().unwrap().coils[5];
+        if (h21 << 16) | h20 == 12345 && !coil5 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "writes never landed: n={:04X}{:04X} coil5={}",
+            h21,
+            h20,
+            coil5
+        );
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    // And the tag reads the new value back.
+    loop {
+        pump(&engine, &asp, &nodes);
+        let v = read_value(&session, &ns2("p3:20"));
+        if v.status == Some(StatusCode::Good) && (as_f64(&v) - 12345.0).abs() < 1e-9 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "tag never echoed 12345: {v:?}");
+        std::thread::sleep(Duration::from_millis(250));
+    }
 
     mb_srv.stop();
 }

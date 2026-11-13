@@ -300,8 +300,7 @@ mod tests {
         .unwrap();
         assert_eq!(c.slave, 7);
         assert_eq!(c.describe(), "RTU/TCP 10.0.0.5:502 · slave 7");
-        let back: Connection =
-            serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        let back: Connection = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert_eq!(back.slave, 7);
     }
 
@@ -317,16 +316,13 @@ mod tests {
     #[test]
     fn computed_tag_defaults_and_roundtrip() {
         // Old project files: `unit` and `decimals` may be missing.
-        let t: ComputedTag =
-            serde_json::from_str(r#"{"name":"ΔT","expr":"{T2} - {T1}"}"#).unwrap();
+        let t: ComputedTag = serde_json::from_str(r#"{"name":"ΔT","expr":"{T2} - {T1}"}"#).unwrap();
         assert_eq!(t.unit, "");
         assert_eq!(t.decimals, 2);
-        let t2: ComputedTag = serde_json::from_str(
-            r#"{"name":"kW","expr":"P*1.5","unit":"кВт","decimals":1}"#,
-        )
-        .unwrap();
-        let back: ComputedTag =
-            serde_json::from_str(&serde_json::to_string(&t2).unwrap()).unwrap();
+        let t2: ComputedTag =
+            serde_json::from_str(r#"{"name":"kW","expr":"P*1.5","unit":"кВт","decimals":1}"#)
+                .unwrap();
+        let back: ComputedTag = serde_json::from_str(&serde_json::to_string(&t2).unwrap()).unwrap();
         assert_eq!(back.decimals, 1);
         assert_eq!(back.unit, "кВт");
     }

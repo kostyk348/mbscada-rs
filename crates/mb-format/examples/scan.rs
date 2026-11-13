@@ -3,9 +3,7 @@
 //! Usage: `cargo run -p mb-format --example scan -- <dir>`
 
 fn main() {
-    let dir = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| ".".to_string());
+    let dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     let mut total = 0usize;
     let mut ok = 0usize;
     let mut sum_conf = 0.0f64;

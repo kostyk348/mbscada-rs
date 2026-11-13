@@ -51,15 +51,11 @@ impl Sim {
         match req {
             Request::ReadCoils { addr, qty } => {
                 let a = Self::in_range(self.coils.len(), *addr, *qty)?;
-                Ok(Response::Bits(
-                    self.coils[a..a + *qty as usize].to_vec(),
-                ))
+                Ok(Response::Bits(self.coils[a..a + *qty as usize].to_vec()))
             }
             Request::ReadDiscreteInputs { addr, qty } => {
                 let a = Self::in_range(self.discrete.len(), *addr, *qty)?;
-                Ok(Response::Bits(
-                    self.discrete[a..a + *qty as usize].to_vec(),
-                ))
+                Ok(Response::Bits(self.discrete[a..a + *qty as usize].to_vec()))
             }
             Request::ReadHoldingRegisters { addr, qty } => {
                 let a = Self::in_range(self.holding.len(), *addr, *qty)?;
@@ -125,7 +121,8 @@ impl Sim {
                 write_addr,
                 write_values,
             } => {
-                let wa = Self::in_range(self.holding.len(), *write_addr, write_values.len() as u16)?;
+                let wa =
+                    Self::in_range(self.holding.len(), *write_addr, write_values.len() as u16)?;
                 self.holding[wa..wa + write_values.len()].copy_from_slice(write_values);
                 let ra = Self::in_range(self.holding.len(), *read_addr, *read_qty)?;
                 Ok(Response::Registers(

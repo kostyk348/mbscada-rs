@@ -233,7 +233,9 @@ impl Transport for AsciiOverTcpTransport {
 /// Shared RTU request/response over any blocking duplex (serial or TCP).
 pub fn rtu_call<R: Read + Write>(io: &mut R, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
     let frame = rtu::encode(unit, pdu);
-    io.write_all(&frame).and_then(|_| io.flush()).map_err(io_err)?;
+    io.write_all(&frame)
+        .and_then(|_| io.flush())
+        .map_err(io_err)?;
 
     let mut buf = vec![0u8; 2];
     io.read_exact(&mut buf).map_err(io_err)?;
@@ -311,7 +313,9 @@ pub fn rtu_call_echo<R: Read + Write>(
     timeout: Duration,
 ) -> Result<Vec<u8>, ProtoError> {
     let frame = rtu::encode(unit, pdu);
-    io.write_all(&frame).and_then(|_| io.flush()).map_err(io_err)?;
+    io.write_all(&frame)
+        .and_then(|_| io.flush())
+        .map_err(io_err)?;
 
     let deadline = Instant::now() + timeout;
     let mut rx: Vec<u8> = Vec::new();
@@ -373,9 +377,15 @@ pub fn rtu_call_echo<R: Read + Write>(
 ///
 /// Responses have no length field: read until the terminating `\r\n` is seen
 /// (bounded, so a dead line can't fill memory).
-pub fn ascii_call<R: Read + Write>(io: &mut R, unit: u8, pdu: &[u8]) -> Result<Vec<u8>, ProtoError> {
+pub fn ascii_call<R: Read + Write>(
+    io: &mut R,
+    unit: u8,
+    pdu: &[u8],
+) -> Result<Vec<u8>, ProtoError> {
     let frame = ascii::encode(unit, pdu);
-    io.write_all(&frame).and_then(|_| io.flush()).map_err(io_err)?;
+    io.write_all(&frame)
+        .and_then(|_| io.flush())
+        .map_err(io_err)?;
 
     let mut buf = Vec::with_capacity(64);
     let mut one = [0u8; 1];
@@ -401,18 +411,16 @@ pub fn ascii_call<R: Read + Write>(io: &mut R, unit: u8, pdu: &[u8]) -> Result<V
 pub fn open_transport(conn: &Connection) -> Result<Box<dyn Transport>, ProtoError> {
     let timeout = Duration::from_millis(conn.timeout_ms.max(50) as u64);
     match conn.kind {
-        ConnKind::Tcp => Ok(Box::new(TcpTransport::connect(&conn.host, conn.port, timeout)?)),
+        ConnKind::Tcp => Ok(Box::new(TcpTransport::connect(
+            &conn.host, conn.port, timeout,
+        )?)),
         ConnKind::RtuOverTcp => Ok(Box::new(RtuOverTcpTransport::connect(
-            &conn.host,
-            conn.port,
-            timeout,
+            &conn.host, conn.port, timeout,
         )?)),
         ConnKind::Rtu => Ok(Box::new(RtuSerialTransport::open(conn)?)),
         ConnKind::Ascii => Ok(Box::new(AsciiSerialTransport::open(conn)?)),
         ConnKind::AsciiOverTcp => Ok(Box::new(AsciiOverTcpTransport::connect(
-            &conn.host,
-            conn.port,
-            timeout,
+            &conn.host, conn.port, timeout,
         )?)),
     }
 }
@@ -457,12 +465,12 @@ mod tests {
             rx: Cursor::new(resp_frame),
             tx: Vec::new(),
         };
-        let req = Request::ReadHoldingRegisters {
-            addr: 0,
-            qty: 2,
-        };
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 2 };
         let out = rtu_call(&mut io, 0x01, &req.encode()).expect("rtu call");
-        assert_eq!(decode_response(&out).unwrap(), Response::Registers(vec![16, 20]));
+        assert_eq!(
+            decode_response(&out).unwrap(),
+            Response::Registers(vec![16, 20])
+        );
         // the bytes written must be a valid RTU frame for our request
         assert_eq!(io.tx, rtu::encode(0x01, &req.encode()));
     }
@@ -475,10 +483,7 @@ mod tests {
             rx: Cursor::new(resp),
             tx: Vec::new(),
         };
-        let req = Request::ReadHoldingRegisters {
-            addr: 0,
-            qty: 2,
-        };
+        let req = Request::ReadHoldingRegisters { addr: 0, qty: 2 };
         let out = rtu_call(&mut io, 0x01, &req.encode()).unwrap();
         assert!(matches!(
             decode_response(&out),
@@ -502,10 +507,7 @@ mod tests {
             rx: Cursor::new(resp),
             tx: Vec::new(),
         };
-        let req = Request::ReadHoldingRegisters {
-            addr: 0x6B,
-            qty: 2,
-        };
+        let req = Request::ReadHoldingRegisters { addr: 0x6B, qty: 2 };
         let out = ascii_call(&mut io, 0x11, &req.encode()).expect("ascii call");
         assert_eq!(
             decode_response(&out).unwrap(),
@@ -519,7 +521,7 @@ mod tests {
     fn ascii_call_dead_line_is_bounded() {
         // runs out of bytes before CRLF -> Truncated, not a hang/growth
         let mut io = MockIo {
-            rx: Cursor::new(vec![b':' ; 2048]), // no CRLF ever
+            rx: Cursor::new(vec![b':'; 2048]), // no CRLF ever
             tx: Vec::new(),
         };
         let req = Request::ReadHoldingRegisters { addr: 0, qty: 1 };
@@ -567,7 +569,10 @@ mod tests {
         };
         let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
             .expect("echo must be stripped");
-        assert_eq!(decode_response(&out).unwrap(), Response::Registers(vec![16, 20]));
+        assert_eq!(
+            decode_response(&out).unwrap(),
+            Response::Registers(vec![16, 20])
+        );
         assert_eq!(io.tx, frame, "the request on the wire is a valid RTU frame");
     }
 
@@ -581,14 +586,20 @@ mod tests {
         };
         let out = rtu_call_echo(&mut io, 0x01, &req.encode(), Duration::from_millis(400))
             .expect("plain response");
-        assert_eq!(decode_response(&out).unwrap(), Response::Registers(vec![7, 8]));
+        assert_eq!(
+            decode_response(&out).unwrap(),
+            Response::Registers(vec![7, 8])
+        );
     }
 
     #[test]
     fn rtu_echo_serial_fc6_response_is_the_request() {
         // No echo: the FC6 response repeats the request verbatim; the grace
         // window must not break the call.
-        let req = Request::WriteSingleRegister { addr: 4, value: 1234 };
+        let req = Request::WriteSingleRegister {
+            addr: 4,
+            value: 1234,
+        };
         let frame = rtu::encode(0x01, &req.encode());
         let mut io = MockIo {
             rx: Cursor::new(frame.clone()),

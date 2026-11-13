@@ -25,7 +25,9 @@ fn main() {
         return;
     }
     let arg = |name: &str| -> Option<String> {
-        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1).cloned())
     };
     let project_path = arg("--project").unwrap_or_else(|| {
         eprintln!("error: --project <project.json> is required (see --help)");
@@ -86,14 +88,28 @@ fn main() {
         log_path,
     }));
 
-    let (server, nodes, asp) = build_server_and_space(&project, &listen);
+    let (server, nodes, asp) = build_server_and_space(&project, &listen, &engine);
     println!(
         "address space: {} tag nodes, {} computed tags, {} status variables",
-        nodes.iter().filter(|n| matches!(n.kind, NodeKind::Tag { .. })).count(),
+        nodes
+            .iter()
+            .filter(|n| matches!(n.kind, NodeKind::Tag { .. }))
+            .count(),
         project.computed.len(),
         project.connections.len() * 3
     );
-    println!("listening on opc.tcp://{listen}/ (security: None, anonymous)");
+    let n_writable = nodes
+        .iter()
+        .filter(|n| matches!(&n.kind, NodeKind::Tag { wr: Some(_), .. }))
+        .count();
+    println!(
+        "listening on opc.tcp://{listen}/ (security: None, anonymous; {} of {} tags writable)",
+        n_writable,
+        nodes
+            .iter()
+            .filter(|n| matches!(n.kind, NodeKind::Tag { .. }))
+            .count()
+    );
 
     // Snapshot pump: engine snapshots -> address space.
     let pump_nodes = nodes;

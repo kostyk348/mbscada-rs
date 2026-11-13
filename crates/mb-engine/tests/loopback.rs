@@ -37,7 +37,12 @@ fn engine_for(port: u16, slave: u8) -> Engine {
 }
 
 /// Wait until `sim.holding[addr] == want` or fail after the deadline.
-fn expect_holding(sim: &std::sync::Arc<std::sync::Mutex<mb_sim::Sim>>, addr: usize, want: u16, secs: u64) {
+fn expect_holding(
+    sim: &std::sync::Arc<std::sync::Mutex<mb_sim::Sim>>,
+    addr: usize,
+    want: u16,
+    secs: u64,
+) {
     let deadline = Instant::now() + Duration::from_secs(secs);
     loop {
         {
@@ -46,7 +51,10 @@ fn expect_holding(sim: &std::sync::Arc<std::sync::Mutex<mb_sim::Sim>>, addr: usi
                 return;
             }
         }
-        assert!(Instant::now() < deadline, "write never landed: holding[{addr}] != {want}");
+        assert!(
+            Instant::now() < deadline,
+            "write never landed: holding[{addr}] != {want}"
+        );
         thread::sleep(Duration::from_millis(50));
     }
 }

@@ -245,7 +245,13 @@ pub fn import_paths(paths: Vec<String>) -> ImportResult {
         }
         let disp = f.display().to_string();
         if !seen.insert(key_of(f)) {
-            reports.push(report_from(&disp, "table", true, "пропущен (дубликат)".into(), None));
+            reports.push(report_from(
+                &disp,
+                "table",
+                true,
+                "пропущен (дубликат)".into(),
+                None,
+            ));
             continue;
         }
         match mb_format::parse_mbp_file(f) {
@@ -325,7 +331,11 @@ mod tests {
             confidence: 1.0,
             notes: String::new(),
         };
-        std::fs::write(dir.join(format!("{name}.mbp")), mb_format::write_mbp(&table)).unwrap();
+        std::fs::write(
+            dir.join(format!("{name}.mbp")),
+            mb_format::write_mbp(&table),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -381,8 +391,15 @@ mod tests {
         // two polls: shared (once, via workspace) + only
         assert_eq!(res.polls.len(), 2, "shared must not be imported twice");
         let shared = res.polls.iter().find(|p| p.name == "shared").unwrap();
-        let wsconn = res.connections.iter().find(|c| c.host == "10.9.8.7").unwrap();
-        assert_eq!(shared.conn_id, wsconn.id, "workspace table uses workspace conn");
+        let wsconn = res
+            .connections
+            .iter()
+            .find(|c| c.host == "10.9.8.7")
+            .unwrap();
+        assert_eq!(
+            shared.conn_id, wsconn.id,
+            "workspace table uses workspace conn"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

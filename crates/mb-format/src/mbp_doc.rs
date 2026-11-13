@@ -17,7 +17,7 @@
 //! only that row's marker bytes).
 
 use crate::error::{Error, Result};
-use crate::util::{MARKER, iter_markers, utf16le_decode};
+use crate::util::{iter_markers, utf16le_decode, MARKER};
 
 /// One row record: the full marker bytes (marker + len + UTF-16LE) plus the
 /// gap block that follows it (padding/colours, and settings for the last row).
@@ -94,7 +94,9 @@ impl MbpDoc {
         }
         // The final marker is the empty closer.
         if markers[markers.len() - 1].len != 0 {
-            return Err(Error::Parse("mbp_doc: last marker is not the closer".into()));
+            return Err(Error::Parse(
+                "mbp_doc: last marker is not the closer".into(),
+            ));
         }
 
         let head = d[..markers[0].offset].to_vec();
@@ -108,7 +110,11 @@ impl MbpDoc {
             rows.push(MbpRow { marker: mk, gap });
         }
         let closing = d[markers[markers.len() - 1].offset..].to_vec();
-        Ok(MbpDoc { head, rows, closing })
+        Ok(MbpDoc {
+            head,
+            rows,
+            closing,
+        })
     }
 
     /// Serialize back; must equal the original input byte for byte.
@@ -164,7 +170,12 @@ mod tests {
         for (p, bytes) in files {
             let doc = MbpDoc::parse(&bytes)
                 .unwrap_or_else(|e| panic!("parse {:?}: {e}", p.file_name().unwrap()));
-            assert_eq!(doc.write(), bytes, "byte-exact round-trip: {:?}", p.file_name());
+            assert_eq!(
+                doc.write(),
+                bytes,
+                "byte-exact round-trip: {:?}",
+                p.file_name()
+            );
         }
     }
 

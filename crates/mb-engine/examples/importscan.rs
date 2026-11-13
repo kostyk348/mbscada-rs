@@ -24,19 +24,27 @@ fn main() {
             p.qty,
             p.slave,
             p.fmt,
-            if p.notation.is_empty() { "dec" } else { &p.notation },
+            if p.notation.is_empty() {
+                "dec"
+            } else {
+                &p.notation
+            },
             p.labels.len(),
             p.name
         );
     }
-        if res.polls.len() > 12 {
+    if res.polls.len() > 12 {
         println!("  ... +{} more", res.polls.len() - 12);
     }
     // show a couple of label keys/values to verify alignment
     for p in res.polls.iter().take(3) {
         let mut keys: Vec<_> = p.labels.iter().collect();
         keys.sort();
-        let sample: Vec<String> = keys.iter().take(3).map(|(k, v)| format!("{k}={v}")).collect();
+        let sample: Vec<String> = keys
+            .iter()
+            .take(3)
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
         println!("  labels[{}]: {}", p.name, sample.join(", "));
     }
     for r in res.reports.iter().filter(|r| !r.ok) {

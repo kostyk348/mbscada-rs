@@ -72,7 +72,11 @@ pub fn merge_polls(polls: &[Poll], gap: u16) -> Vec<Poll> {
     }
     for k in order {
         let idxs = &groups[&k];
-        let max_chunk = if matches!(k.2, 1 | 2) { MAX_BITS } else { MAX_REGS };
+        let max_chunk = if matches!(k.2, 1 | 2) {
+            MAX_BITS
+        } else {
+            MAX_REGS
+        };
         let mut members: Vec<&Poll> = idxs.iter().map(|&i| &polls[i]).collect();
         members.sort_by_key(|p| p.start);
         // Sweep: extend the current run while the next range starts within
@@ -208,15 +212,31 @@ mod tests {
         // below that returns 2 really is a key mismatch, not distance.
         let a = poll(1, "A", 3, 0, 10);
         let mut p2 = poll(2, "B", 3, 20, 5);
-        assert_eq!(merge_polls(&[a.clone(), p2.clone()], 50).len(), 1, "sanity: same key merges");
+        assert_eq!(
+            merge_polls(&[a.clone(), p2.clone()], 50).len(),
+            1,
+            "sanity: same key merges"
+        );
         p2.func = 4;
-        assert_eq!(merge_polls(&[a.clone(), p2.clone()], 50).len(), 2, "func differs");
+        assert_eq!(
+            merge_polls(&[a.clone(), p2.clone()], 50).len(),
+            2,
+            "func differs"
+        );
         p2.func = 3;
         p2.mult = 2.0;
-        assert_eq!(merge_polls(&[a.clone(), p2.clone()], 50).len(), 2, "scale differs");
+        assert_eq!(
+            merge_polls(&[a.clone(), p2.clone()], 50).len(),
+            2,
+            "scale differs"
+        );
         p2.mult = 1.0;
         p2.slave = 2;
-        assert_eq!(merge_polls(&[a.clone(), p2.clone()], 50).len(), 2, "slave differs");
+        assert_eq!(
+            merge_polls(&[a.clone(), p2.clone()], 50).len(),
+            2,
+            "slave differs"
+        );
         p2.slave = 1;
         p2.scan_ms = 500;
         assert_eq!(merge_polls(&[a, p2], 50).len(), 2, "scan rate differs");
@@ -231,7 +251,10 @@ mod tests {
         assert_eq!((m[1].start, m[1].qty), (125, 125));
         assert_eq!((m[2].start, m[2].qty), (250, 50));
         assert_ne!(m[1].id, m[0].id, "chunk polls get distinct ids");
-        assert_eq!(m[0].labels.len() + m[1].labels.len() + m[2].labels.len(), 300);
+        assert_eq!(
+            m[0].labels.len() + m[1].labels.len() + m[2].labels.len(),
+            300
+        );
         let bits = vec![poll(1, "B", 1, 0, 2500)];
         let mb = merge_polls(&bits, 0);
         assert_eq!(mb.len(), 2);

@@ -25,5 +25,5 @@ pub use engine::{
 pub use format::{decode, display, Fmt};
 pub use import::{import_paths, ImportResult};
 pub use model::{func_is_read, AlarmSpec, ComputedTag, ConnKind, Connection, Poll, SerialCfg};
-pub use rules::{branch_count, first_matching, Cond, MAX_BRANCHES, Rule, Severity};
+pub use rules::{branch_count, first_matching, Cond, Rule, Severity, MAX_BRANCHES};
 pub use transport::{open_transport, Transport};

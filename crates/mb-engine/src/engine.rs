@@ -183,7 +183,12 @@ fn now_hms() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0)
         % 86400;
-    format!("{:02}:{:02}:{:02}", secs / 3600, (secs % 3600) / 60, secs % 60)
+    format!(
+        "{:02}:{:02}:{:02}",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
 }
 
 fn now_ms() -> u128 {
@@ -215,7 +220,12 @@ fn now_stamp() -> String {
         .unwrap_or(0);
     let (y, mo, d) = civil_from_days((secs / 86_400) as i64);
     let s = secs % 86_400;
-    format!("{y:04}-{mo:02}-{d:02} {:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+    format!(
+        "{y:04}-{mo:02}-{d:02} {:02}:{:02}:{:02}",
+        s / 3600,
+        (s % 3600) / 60,
+        s % 60
+    )
 }
 
 impl Engine {
@@ -275,7 +285,14 @@ impl Engine {
         conn_ids.dedup();
 
         let n_polls = inner.lock().unwrap().polls.len();
-        engine_event(&inner, &format!("движок запущен: {} соединений, {} опросов", conn_ids.len(), n_polls));
+        engine_event(
+            &inner,
+            &format!(
+                "движок запущен: {} соединений, {} опросов",
+                conn_ids.len(),
+                n_polls
+            ),
+        );
 
         let mut handles = Vec::new();
         for cid in conn_ids {
@@ -313,7 +330,10 @@ impl Engine {
     }
 
     pub fn rules(&self) -> Vec<Rule> {
-        self.inner.lock().map(|g| g.rules.clone()).unwrap_or_default()
+        self.inner
+            .lock()
+            .map(|g| g.rules.clone())
+            .unwrap_or_default()
     }
 
     pub fn write(&self, poll_id: u32, addr: u16, value: u16) -> Result<(), String> {
@@ -427,9 +447,7 @@ fn eval_computed(g: &Inner) -> Vec<ComputedView> {
     for p in &g.polls {
         if let Some(rows) = g.rows.get(&p.id) {
             for r in rows {
-                let scaled = r.value * p.mult
-                    / (if p.div == 0.0 { 1.0 } else { p.div })
-                    + p.offset;
+                let scaled = r.value * p.mult / (if p.div == 0.0 { 1.0 } else { p.div }) + p.offset;
                 let good = r.quality == "good";
                 vals.insert(p.label_of(r.addr), (scaled, good));
                 vals.insert(format!("p{}:{}", p.id, r.addr), (scaled, good));
@@ -469,7 +487,11 @@ fn eval_computed(g: &Inner) -> Vec<ComputedView> {
                             value: v,
                             display: format!("{v:.dec$}"),
                             ok: !bad_quality,
-                            err: if bad_quality { "нет качества у исходного тэга".into() } else { String::new() },
+                            err: if bad_quality {
+                                "нет качества у исходного тэга".into()
+                            } else {
+                                String::new()
+                            },
                         },
                         Ok(_) => ComputedView {
                             name: t.name.clone(),
@@ -600,7 +622,8 @@ fn build_rows(poll: &Poll, regs: &[u16], rules: &[Rule], quality: &str) -> Vec<R
         } else {
             display(raw, value, poll.fmt, poll.mult, poll.div, poll.offset)
         };
-        let scaled = value * poll.mult / (if poll.div == 0.0 { 1.0 } else { poll.div }) + poll.offset;
+        let scaled =
+            value * poll.mult / (if poll.div == 0.0 { 1.0 } else { poll.div }) + poll.offset;
 
         let (mut level, mut msg) = poll
             .alarm_of(*addr)
@@ -697,7 +720,12 @@ fn update_stats<F: FnOnce(&mut ConnStats)>(inner: &Arc<Mutex<Inner>>, conn_id: &
     }
 }
 
-fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, rx: Receiver<Command>) {
+fn conn_loop(
+    inner: Arc<Mutex<Inner>>,
+    stop: Arc<AtomicBool>,
+    conn_id: String,
+    rx: Receiver<Command>,
+) {
     let mut tr: Option<Box<dyn Transport>> = None;
     let mut next_due: HashMap<u32, Instant> = HashMap::new();
     let mut opens: u64 = 0; // successful transport opens (reconnect diagnostics)
@@ -772,7 +800,13 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                         }
                     });
                     if opens > 1 {
-                        push_log(&inner, &conn.name, "SYS", "связь восстановлена".into(), true);
+                        push_log(
+                            &inner,
+                            &conn.name,
+                            "SYS",
+                            "связь восстановлена".into(),
+                            true,
+                        );
                     }
                 }
                 Err(e) => {
@@ -791,7 +825,11 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
                         last_open_err = Some(Instant::now());
                     }
                     // Write-only pending work retries faster than scans.
-                    thread::sleep(Duration::from_millis(if polls.is_empty() { 200 } else { 800 }));
+                    thread::sleep(Duration::from_millis(if polls.is_empty() {
+                        200
+                    } else {
+                        800
+                    }));
                     continue;
                 }
             }
@@ -811,10 +849,7 @@ fn conn_loop(inner: Arc<Mutex<Inner>>, stop: Arc<AtomicBool>, conn_id: String, r
             if now < due {
                 continue;
             }
-            next_due.insert(
-                poll.id,
-                now + Duration::from_millis(poll.scan_ms.max(20)),
-            );
+            next_due.insert(poll.id, now + Duration::from_millis(poll.scan_ms.max(20)));
             did = true;
             let t0 = Instant::now();
             match read_poll(tr.as_mut().unwrap(), poll) {
@@ -965,12 +1000,33 @@ fn do_command(inner: &Arc<Mutex<Inner>>, tr: &mut Box<dyn Transport>, conn_id: &
                         inner,
                         &conn_name,
                         "WR",
-                        format!("{} @{} = {}", poll.name, addr, if multi { "multi".into() } else { value.to_string() }),
+                        format!(
+                            "{} @{} = {}",
+                            poll.name,
+                            addr,
+                            if multi {
+                                "multi".into()
+                            } else {
+                                value.to_string()
+                            }
+                        ),
                         true,
                     ),
-                    Err(e) => push_log(inner, &conn_name, "ERR", format!("write @{addr}: {e}"), false),
+                    Err(e) => push_log(
+                        inner,
+                        &conn_name,
+                        "ERR",
+                        format!("write @{addr}: {e}"),
+                        false,
+                    ),
                 },
-                Err(e) => push_log(inner, &conn_name, "ERR", format!("write @{addr}: {e}"), false),
+                Err(e) => push_log(
+                    inner,
+                    &conn_name,
+                    "ERR",
+                    format!("write @{addr}: {e}"),
+                    false,
+                ),
             }
         }
     }

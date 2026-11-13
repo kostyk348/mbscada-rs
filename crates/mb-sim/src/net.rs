@@ -248,7 +248,6 @@ fn rtu_frame_len(buf: &[u8]) -> Option<usize> {
     Some(fixed + 2) // CRC16
 }
 
-
 // ------------------------------------------------------------ serial RTU --
 
 /// Serial line settings for a physical RTU slave (USB-RS485 adapter, COM port).
@@ -268,7 +267,13 @@ pub struct SerialParams {
 
 impl Default for SerialParams {
     fn default() -> Self {
-        Self { port: String::new(), baud: 9600, parity: 'E', data_bits: 8, stop_bits: 1 }
+        Self {
+            port: String::new(),
+            baud: 9600,
+            parity: 'E',
+            data_bits: 8,
+            stop_bits: 1,
+        }
     }
 }
 
@@ -366,7 +371,10 @@ pub fn serve_serial_shared(
 ) -> std::io::Result<SerialServer> {
     let port = open_serial(p)?; // fail fast: busy / missing port
     let stop = Arc::new(AtomicBool::new(false));
-    let desc = format!("{} @ {} {}{}{}", p.port, p.baud, p.data_bits, p.parity, p.stop_bits);
+    let desc = format!(
+        "{} @ {} {}{}{}",
+        p.port, p.baud, p.data_bits, p.parity, p.stop_bits
+    );
     let stop2 = Arc::clone(&stop);
     thread::spawn(move || serial_loop(port, sim, stop2));
     Ok(SerialServer { stop, desc })
@@ -512,14 +520,21 @@ mod tests {
         assert!(server.stopped());
         assert_eq!(server.clients(), 0, "client threads exited");
         let mut tmp = [0u8; 1];
-        assert!(matches!(s.read(&mut tmp), Ok(0) | Err(_)), "client stream closed by stop()");
+        assert!(
+            matches!(s.read(&mut tmp), Ok(0) | Err(_)),
+            "client stream closed by stop()"
+        );
     }
 
     #[test]
     fn rtu_roundtrip_and_stop() {
         let server = serve_rtu(Sim::new(1), "127.0.0.1:0").expect("bind");
         let mut s = TcpStream::connect(server.addr).expect("connect");
-        let req = Request::WriteSingleRegister { addr: 4, value: 1234 }.encode();
+        let req = Request::WriteSingleRegister {
+            addr: 4,
+            value: 1234,
+        }
+        .encode();
         s.write_all(&rtu::encode(1, &req)).unwrap();
         s.flush().unwrap();
         thread::sleep(Duration::from_millis(150));
@@ -539,9 +554,7 @@ mod tests {
         let mut replies = Vec::new();
         process_serial_buf(&mut sim, &mut buf, &mut replies);
         assert_eq!(replies.len(), 1, "garbage prefix skipped, frame served");
-        let expect = mb_proto::pdu::decode_response(
-            &rtu::parse(&replies[0]).unwrap().1,
-        ).unwrap();
+        let expect = mb_proto::pdu::decode_response(&rtu::parse(&replies[0]).unwrap().1).unwrap();
         assert_eq!(expect, Response::Registers(vec![0, 0]));
         assert!(buf.is_empty(), "buffer fully consumed");
     }
@@ -565,14 +578,20 @@ mod tests {
         process_serial_buf(&mut sim, &mut buf, &mut replies);
         assert_eq!(replies.len(), 1, "bad-CRC frame dropped, good one served");
         assert_eq!(sim.holding[5], 88, "write after the dropped frame applied");
-        assert!(!sim.holding.iter().any(|&v| v == 77), "corrupted write never applied");
+        assert!(
+            !sim.holding.iter().any(|&v| v == 77),
+            "corrupted write never applied"
+        );
         assert!(buf.is_empty());
     }
 
     #[test]
     fn serial_buf_incomplete_frame_waits() {
         let mut sim = Sim::new(1);
-        let frame = rtu::encode(1, &Request::ReadHoldingRegisters { addr: 0, qty: 1 }.encode());
+        let frame = rtu::encode(
+            1,
+            &Request::ReadHoldingRegisters { addr: 0, qty: 1 }.encode(),
+        );
         let (head, _tail) = frame.split_at(frame.len() - 1);
         let mut buf = head.to_vec();
         let mut replies = Vec::new();
@@ -587,8 +606,14 @@ mod tests {
     #[test]
     fn serial_buf_two_frames_in_one_read() {
         let mut sim = Sim::new(1);
-        let a = rtu::encode(1, &Request::WriteSingleRegister { addr: 0, value: 10 }.encode());
-        let b = rtu::encode(1, &Request::WriteSingleRegister { addr: 1, value: 20 }.encode());
+        let a = rtu::encode(
+            1,
+            &Request::WriteSingleRegister { addr: 0, value: 10 }.encode(),
+        );
+        let b = rtu::encode(
+            1,
+            &Request::WriteSingleRegister { addr: 1, value: 20 }.encode(),
+        );
         let mut buf = a;
         buf.extend_from_slice(&b);
         let mut replies = Vec::new();
@@ -621,10 +646,18 @@ mod tests {
     #[test]
     fn serve_serial_invalid_port_fails_fast() {
         let params = SerialParams {
-            port: if cfg!(windows) { "\\\\.\\NOSUCHCOMPORT42" } else { "/dev/mbscada-no-such-port-xyz" }.into(),
+            port: if cfg!(windows) {
+                "\\\\.\\NOSUCHCOMPORT42"
+            } else {
+                "/dev/mbscada-no-such-port-xyz"
+            }
+            .into(),
             ..SerialParams::default()
         };
-        assert!(serve_serial(Sim::new(1), &params).is_err(), "missing port must error, not panic");
+        assert!(
+            serve_serial(Sim::new(1), &params).is_err(),
+            "missing port must error, not panic"
+        );
     }
 
     #[test]
