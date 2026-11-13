@@ -51,6 +51,41 @@ jobs:
           releaseDraft: false
           prerelease: false
 
+      # Portable (standalone) archives: run without installing anything.
+      #   Windows: zip with the exe (WebView2 ships with Win10/11)
+      #   macOS:   zip with the .app bundle (drag-and-drop, no dmg)
+      #   Linux:   AppImage from tauri-action is already no-install
+      - name: Package portable (no-install) archives
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VER="${TAG#v}"
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            Windows-X64)
+              EXE=$(ls target/release/mbSCADA.exe target/release/mbscada.exe 2>/dev/null | head -1)
+              if [ -n "$EXE" ]; then
+                cp "$EXE" mbSCADA_x64_portable.exe
+                7z a -tzip "mbSCADA_${VER}_x64_portable.zip" mbSCADA_x64_portable.exe >/dev/null
+                rm mbSCADA_x64_portable.exe
+                gh release upload "$TAG" "mbSCADA_${VER}_x64_portable.zip" --clobber --repo "$GITHUB_REPOSITORY"
+              else
+                echo "no exe found in target/release" && ls target/release | head -20 && exit 1
+              fi
+              ;;
+            macOS-ARM64)
+              APP=$(ls -d target/release/bundle/macos/*.app 2>/dev/null | head -1)
+              if [ -n "$APP" ]; then
+                (cd "$(dirname "$APP")" && zip -qry "/tmp/mbSCADA_${VER}_macos-arm64_portable.zip" "$(basename "$APP")")
+                gh release upload "$TAG" "/tmp/mbSCADA_${VER}_macos-arm64_portable.zip" --clobber --repo "$GITHUB_REPOSITORY"
+              else
+                echo "no .app bundle found" && ls target/release/bundle 2>/dev/null || true
+              fi
+              ;;
+          esac
+
       # The OPC UA bridge is a plain cargo binary — built natively on every
       # release runner and attached to the same release (the tauri-action
       # step above has created it by now).

@@ -9,11 +9,16 @@ use std::time::Duration;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("mb-opc {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
             "mb-opc — OPC UA bridge for mbSCADA projects\n\n\
              USAGE: mb-opc --project <project.json> [options]\n\n\
              OPTIONS:\n  \
+             --version             print version and exit\n  \
              --project <path>      project JSON (the file the mbSCADA app saves)\n  \
              --listen <host:port>  OPC UA TCP bind address [default: 0.0.0.0:4840]\n  \
              --coalesce-gap <n>    max register gap that still merges polls [default: 0]\n  \
@@ -88,7 +93,7 @@ fn main() {
         log_path,
     }));
 
-    let (server, nodes, asp) = build_server_and_space(&project, &listen, &engine);
+    let (server, nodes, asp, _ns) = build_server_and_space(&project, &listen, &engine);
     println!(
         "address space: {} tag nodes, {} computed tags, {} status variables",
         nodes
@@ -119,4 +124,5 @@ fn main() {
     });
 
     server.run();
+    // unreachable in practice: run() blocks until the process is killed
 }

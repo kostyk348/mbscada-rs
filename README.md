@@ -66,10 +66,9 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 
 | Platform | Files |
 |---|---|
-| **Windows** 10/11 x64 | NSIS installer `.exe` · `.msi` |
-| **Linux** x86_64 & aarch64 | `.AppImage` (runs anywhere) · `.deb` |
-| **macOS** Apple Silicon & Intel | `.dmg` |
-| **OPC UA bridge** `mb-opc` | `mb-opc-linux-x64 / -arm64` · `mb-opc-windows-x64.exe` · `mb-opc-macos-arm64` (same release page) |
+| **Windows** 10/11 x64 | NSIS installer `.exe` · `.msi` · **portable zip** (no install) |
+| **Linux** x86_64 & aarch64 | `.AppImage` (runs anywhere — already no-install) · `.deb` |
+| **macOS** Apple Silicon & Intel | `.dmg` · **portable zip** with the `.app` bundle |
 | **OPC UA bridge** `mb-opc` | `mb-opc-linux-x64 / -arm64` · `mb-opc-windows-x64.exe` · `mb-opc-macos-arm64` (same release page) |
 
 > Windows: WebView2 is preinstalled on Win10/11. Linux AppImage bundles its own WebKit.
@@ -142,22 +141,8 @@ mb-opc --project my-plant.json --listen 0.0.0.0:4840
 - Bit polls (FC1/FC2) → `Boolean`, everything else → `Double` in engineering units (`×mult ÷div +offset` applied).
 - Row quality becomes OPC UA status: good → `Good`, not read yet → `Uncertain (last usable)`, error → `Bad (comm failure)`; source timestamps come from the engine.
 - **Read coalescing**: neighbouring polls on the same connection merge into wider transactions (125-register / 2000-bit protocol limits respected) — fewer Modbus round-trips per cycle.
-- Node ids are stable (`ns=2;s=p<poll_id>:<addr>`), so clients subscribe by id. Security policy is None/anonymous — keep the bridge on a trusted network.
-- Ships as a standalone binary (`mb-opc-*` in every release) — next to the app or headless on a gateway.
-
-### 🌉 OPC UA bridge (`mb-opc`, v1.6.0)
-
-The same project file, served to any OPC UA client — SCADA masters, historians, MES. The bridge polls Modbus with the same engine as the app and exposes every tag over `opc.tcp`:
-
-```text
-mb-opc --project my-plant.json --listen 0.0.0.0:4840
-```
-
-- Browse tree `mbSCADA/<poll>/<row label>`, `Computed/<tag>`, `Status/<connection>/online|tx|errors`.
-- Bit polls (FC1/FC2) → `Boolean`, everything else → `Double` in engineering units (`×mult ÷div +offset` applied).
-- Row quality becomes OPC UA status: good → `Good`, not read yet → `Uncertain (last usable)`, error → `Bad (comm failure)`; source timestamps come from the engine.
-- **Read coalescing**: neighbouring polls on the same connection merge into wider transactions (125-register / 2000-bit protocol limits respected) — fewer Modbus round-trips per cycle.
-- Node ids are stable (`ns=2;s=p<poll_id>:<addr>`), so clients subscribe by id. Security policy is None/anonymous — keep the bridge on a trusted network.
+- **Write-back**: holding-register and coil tags are writable from the OPC UA side — a client `write` is unscaled (`×mult ÷div +offset` reversed), split into words in the tag's byte order and sent to the device as FC 05 (coil) / FC 06 (register) / FC 16 (32/64-bit multi-register). Input areas (FC2/FC4) are read-only by design.
+- Node ids are stable (`ns=1;s=p<poll_id>:<addr>` (the bridge namespace; its index is what `register_namespace` assigns — typically 1)), so clients subscribe by id. Security policy is None/anonymous — keep the bridge on a trusted network.
 - Ships as a standalone binary (`mb-opc-*` in every release) — next to the app or headless on a gateway.
 
 ### 🤝 Modbus Poll compatibility

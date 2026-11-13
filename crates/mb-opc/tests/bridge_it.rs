@@ -125,7 +125,7 @@ fn bridge_end_to_end() {
     }));
 
     let opc_port = free_port();
-    let (server, nodes, asp) =
+    let (server, nodes, asp, ns) =
         build_server_and_space(&project, &format!("127.0.0.1:{opc_port}"), &engine);
     let server = Arc::new(RwLock::new(server));
     std::thread::spawn(move || Server::run_server(server));
@@ -152,7 +152,7 @@ fn bridge_end_to_end() {
         .connect_to_endpoint_id(Some("none"))
         .expect("client connects to the bridge");
 
-    let ns2 = |s: &str| NodeId::new(2, s.to_string());
+    let ns2 = |s: &str| NodeId::new(ns, s.to_string());
 
     // --- Pump snapshots until the tags go good (or fail after 15 s) ---------
     let tag_ids: Vec<NodeId> = ["p1:0", "p2:2", "p3:20", "p4:5"]

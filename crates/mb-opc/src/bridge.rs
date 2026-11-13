@@ -215,7 +215,7 @@ pub fn build_server_and_space(
     project: &Project,
     listen: &str,
     engine: &Arc<Engine>,
-) -> (Server, Vec<NodeRef>, Arc<RwLock<AddressSpace>>) {
+) -> (Server, Vec<NodeRef>, Arc<RwLock<AddressSpace>>, u16) {
     let (host, port) = match listen.rsplit_once(':') {
         Some((h, p)) => (
             h.to_string(),
@@ -348,7 +348,7 @@ pub fn build_server_and_space(
             }
         }
     }
-    (server, nodes, asp)
+    (server, nodes, asp, ns)
 }
 
 /// Push one engine snapshot into the address space: tag values with quality
