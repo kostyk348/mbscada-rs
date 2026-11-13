@@ -51,7 +51,7 @@ fn read_value(session: &Arc<RwLock<Session>>, id: &NodeId) -> DataValue {
         node_id: id.clone(),
         attribute_id: AttributeId::Value as u32,
         index_range: UAString::null(),
-        data_encoding: QualifiedName::new(0, ""),
+        data_encoding: QualifiedName::null(),
     };
     let s = session.write();
     s.read(&[rv], TimestampsToReturn::Both, 0.0)
