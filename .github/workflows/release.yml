@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -106,3 +107,52 @@ jobs:
           esac
           cp "target/release/mb-opc${{ runner.os == 'Windows' && '.exe' || '' }}" "$NAME"
           gh release upload "$TAG" "$NAME" --clobber --repo "$GITHUB_REPOSITORY"
+
+  # Signed release: one SHA256SUMS for every artifact, cosign keyless signature
+  # (sigstore transparency log, no long-lived keys) + optional GPG signature.
+  sign:
+    name: Sign release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish SHA256SUMS and its signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          mkdir -p assets && cd assets
+          gh release download "$TAG" --dir . --clobber --repo "$GITHUB_REPOSITORY" || true
+          rm -f SHA256SUMS*
+          sha256sum * > ../SHA256SUMS.txt
+          cd ..
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+
+          curl -sSfL -o cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          chmod +x cosign
+          ./cosign sign-blob --yes \
+            --output-signature SHA256SUMS.txt.sig \
+            --output-certificate SHA256SUMS.txt.pem \
+            SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt.sig SHA256SUMS.txt.pem --clobber \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: GPG signature over the checksums (optional, secret-gated)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "No GPG_PRIVATE_KEY secret - skipping the GPG signature."
+            exit 0
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
+            --armor --detach-sign --output SHA256SUMS.txt.asc SHA256SUMS.txt
+          gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt.asc --clobber --repo "$GITHUB_REPOSITORY"
