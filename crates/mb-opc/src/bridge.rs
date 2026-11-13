@@ -233,9 +233,10 @@ pub fn build_server_and_space(
     let asp = server.address_space();
 
     let mut nodes: Vec<NodeRef> = Vec::new();
+    let ns;
     {
         let mut sp = asp.write();
-        let ns = sp
+        ns = sp
             .register_namespace(crate::NAMESPACE_URI)
             .expect("namespace not registered yet");
         let root = NodeId::new(ns, "mbscada");
@@ -266,18 +267,20 @@ pub fn build_server_and_space(
                 // writes; input areas (FC2/FC4) are read-only by design.
                 let wr = if p.func == 1 || p.func == 3 {
                     var.set_writable(true);
-                    var.set_value_setter(Arc::new(Mutex::new(TagWriter {
-                        engine: engine.clone(),
-                        conn: p.conn_id.clone(),
-                        slave: p.slave,
-                        func: p.func,
-                        addr,
-                        fmt: p.fmt,
-                        mult: p.mult,
-                        div: p.div,
-                        offset: p.offset,
-                        is_bits,
-                    })));
+                    let setter: Arc<Mutex<dyn AttributeSetter + Send>> =
+                        Arc::new(Mutex::new(TagWriter {
+                            engine: engine.clone(),
+                            conn: p.conn_id.clone(),
+                            slave: p.slave,
+                            func: p.func,
+                            addr,
+                            fmt: p.fmt,
+                            mult: p.mult,
+                            div: p.div,
+                            offset: p.offset,
+                            is_bits,
+                        }));
+                    var.set_value_setter(setter);
                     Some(WriteParams {
                         fmt: p.fmt,
                         mult: p.mult,
