@@ -267,6 +267,12 @@ pub fn build_server_and_space(
                 // writes; input areas (FC2/FC4) are read-only by design.
                 let wr = if p.func == 1 || p.func == 3 {
                     var.set_writable(true);
+                    // set_writable флагует узел, но service-слой проверяет
+                    // ещё и user_access_level — без CURRENT_WRITE клиентская
+                    // запись вернёт BadNotWritable
+                    var.set_user_access_level(
+                        UserAccessLevel::CURRENT_READ | UserAccessLevel::CURRENT_WRITE,
+                    );
                     let setter: Arc<Mutex<dyn AttributeSetter + Send>> =
                         Arc::new(Mutex::new(TagWriter {
                             engine: engine.clone(),
