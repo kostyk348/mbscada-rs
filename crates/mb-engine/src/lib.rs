@@ -7,6 +7,7 @@
 //! * [`rules`] — extra styling rules (colour, blink, severity).
 //! * [`engine`] — the multi-poll engine producing snapshots for the UI.
 
+pub mod coalesce;
 pub mod engine;
 pub mod expr;
 pub mod format;
@@ -15,6 +16,8 @@ pub mod model;
 pub mod rules;
 pub mod transport;
 
+pub use coalesce::{merge_polls, SYNTH_ID_BASE};
+
 pub use engine::{
     CommEntry, ComputedView, ConnStats, ConnView, Engine, EngineCfg, PollStats, PollView, RowView,
     Snapshot,
@@ -22,5 +25,5 @@ pub use engine::{
 pub use format::{decode, display, Fmt};
 pub use import::{import_paths, ImportResult};
 pub use model::{func_is_read, AlarmSpec, ComputedTag, ConnKind, Connection, Poll, SerialCfg};
-pub use rules::{branch_count, first_matching, Cond, MAX_BRANCHES, Rule, Severity};
+pub use rules::{branch_count, first_matching, Cond, Rule, Severity, MAX_BRANCHES};
 pub use transport::{open_transport, Transport};

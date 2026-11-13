@@ -5,9 +5,7 @@
 //! settings and pushes them here; `mb-engine` does the polling. This crate
 //! only exposes commands — no polling logic.
 
-use mb_engine::{
-    ComputedTag, Connection, Engine, EngineCfg, Poll, Rule, Snapshot,
-};
+use mb_engine::{ComputedTag, Connection, Engine, EngineCfg, Poll, Rule, Snapshot};
 use mb_sim::net::SimServer;
 use mb_sim::Sim;
 use serde::{Deserialize, Serialize};
@@ -126,8 +124,7 @@ impl SlaveRun {
     fn matches(&self, port: u16, unit: u8, mode: &str, serial: Option<&SlaveSerialDto>) -> bool {
         self.mode == mode
             && self.unit == unit
-            && (mode == "serial"
-                || self.port == port)
+            && (mode == "serial" || self.port == port)
             && self.serial_cfg.as_ref() == serial
     }
 }
@@ -294,7 +291,12 @@ fn slave_status(slave: State<SlaveState>) -> SlaveStatus {
 
 /// Read raw registers/bits of the simulated device (bits come back as 0/1).
 #[tauri::command]
-fn slave_read(slave: State<SlaveState>, area: String, start: u16, qty: u16) -> Result<Vec<u16>, String> {
+fn slave_read(
+    slave: State<SlaveState>,
+    area: String,
+    start: u16,
+    qty: u16,
+) -> Result<Vec<u16>, String> {
     let g = slave.run.lock().map_err(|_| "lock".to_string())?;
     let run = g.as_ref().ok_or("slave не запущен")?;
     let sim = run.sim.lock().map_err(|_| "lock".to_string())?;
@@ -325,7 +327,12 @@ fn slave_read(slave: State<SlaveState>, area: String, start: u16, qty: u16) -> R
 /// Write raw registers/bits of the simulated device (used by the slave panel
 /// editor and the auto-generator; external masters write via Modbus itself).
 #[tauri::command]
-fn slave_write(slave: State<SlaveState>, area: String, start: u16, values: Vec<u16>) -> Result<(), String> {
+fn slave_write(
+    slave: State<SlaveState>,
+    area: String,
+    start: u16,
+    values: Vec<u16>,
+) -> Result<(), String> {
     let g = slave.run.lock().map_err(|_| "lock".to_string())?;
     let run = g.as_ref().ok_or("slave не запущен")?;
     let mut sim = run.sim.lock().map_err(|_| "lock".to_string())?;

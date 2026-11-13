@@ -1,0 +1,25 @@
+[package]
+name = "mb-opc"
+description = "OPC UA bridge: serves an mbSCADA project (Modbus connections, polls, computed tags) as an OPC UA server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mb-opc"
+path = "src/main.rs"
+
+[dependencies]
+mb-engine = { path = "../mb-engine" }
+# vendored OpenSSL on every platform: the release bridge binary must be
+# portable (no system libssl version dance on old/odd distros)
+opcua = { version = "0.12", default-features = false, features = [
+    "server",
+    "vendored-openssl",
+    "console-logging",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+mb-sim = { path = "../mb-sim" }

@@ -238,7 +238,11 @@ fn call(name: &str, args: &[f64]) -> Result<f64, String> {
         if args.len() == n {
             Ok(())
         } else {
-            Err(format!("{}: ожидалось {n} аргумент(ов), передано {}", name, args.len()))
+            Err(format!(
+                "{}: ожидалось {n} аргумент(ов), передано {}",
+                name,
+                args.len()
+            ))
         }
     };
     match name {
@@ -306,7 +310,10 @@ impl Expr {
         if p.pos != p.toks.len() {
             return Err("лишние символы в конце выражения".into());
         }
-        Ok(Expr { src: s.to_string(), ast })
+        Ok(Expr {
+            src: s.to_string(),
+            ast,
+        })
     }
 
     pub fn source(&self) -> &str {
@@ -315,10 +322,7 @@ impl Expr {
 
     /// Evaluate; `vars` resolves a variable name to its value (`None` =
     /// unknown variable → error naming it).
-    pub fn eval(
-        &self,
-        vars: &mut dyn FnMut(&str) -> Option<f64>,
-    ) -> Result<f64, String> {
+    pub fn eval(&self, vars: &mut dyn FnMut(&str) -> Option<f64>) -> Result<f64, String> {
         let v = eval_node(&self.ast, vars)?;
         if v.is_finite() {
             Ok(v)
@@ -381,22 +385,55 @@ mod tests {
     use super::*;
 
     fn vars<'a>(list: &'a [(&'a str, f64)]) -> impl FnMut(&str) -> Option<f64> + 'a {
-        let m: HashMap<String, f64> = list
-            .iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect();
+        let m: HashMap<String, f64> = list.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         move |n: &str| m.get(n).copied()
     }
 
     #[test]
     fn arithmetic_and_precedence() {
         let v = vars(&[]);
-        assert_eq!(Expr::compile("2 + 3 * 4").unwrap().eval(&mut vars(&[])).unwrap(), 14.0);
-        assert_eq!(Expr::compile("(2 + 3) * 4").unwrap().eval(&mut vars(&[])).unwrap(), 20.0);
-        assert_eq!(Expr::compile("2 ^ 3 ^ 2").unwrap().eval(&mut vars(&[])).unwrap(), 512.0);
-        assert_eq!(Expr::compile("-3 + 5").unwrap().eval(&mut vars(&[])).unwrap(), 2.0);
-        assert_eq!(Expr::compile("7 % 3").unwrap().eval(&mut vars(&[])).unwrap(), 1.0);
-        assert_eq!(Expr::compile("10 / 4").unwrap().eval(&mut vars(&[])).unwrap(), 2.5);
+        assert_eq!(
+            Expr::compile("2 + 3 * 4")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            14.0
+        );
+        assert_eq!(
+            Expr::compile("(2 + 3) * 4")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            20.0
+        );
+        assert_eq!(
+            Expr::compile("2 ^ 3 ^ 2")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            512.0
+        );
+        assert_eq!(
+            Expr::compile("-3 + 5")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            2.0
+        );
+        assert_eq!(
+            Expr::compile("7 % 3")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            1.0
+        );
+        assert_eq!(
+            Expr::compile("10 / 4")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            2.5
+        );
         let _ = v;
     }
 
@@ -406,20 +443,80 @@ mod tests {
         assert_eq!(Expr::compile("T1 * 2").unwrap().eval(&mut e).unwrap(), 40.0);
         let mut e2 = vars(&[("Т2 реактор", 30.0)]);
         // brace syntax allows spaces / cyrillic
-        assert_eq!(Expr::compile("{Т2 реактор} + 1").unwrap().eval(&mut e2).unwrap(), 31.0);
+        assert_eq!(
+            Expr::compile("{Т2 реактор} + 1")
+                .unwrap()
+                .eval(&mut e2)
+                .unwrap(),
+            31.0
+        );
     }
 
     #[test]
     fn functions_work() {
-        assert_eq!(Expr::compile("min(3, 2, 5)").unwrap().eval(&mut vars(&[])).unwrap(), 2.0);
-        assert_eq!(Expr::compile("max(3, 2, 5)").unwrap().eval(&mut vars(&[])).unwrap(), 5.0);
-        assert_eq!(Expr::compile("abs(0 - 7)").unwrap().eval(&mut vars(&[])).unwrap(), 7.0);
-        assert_eq!(Expr::compile("sqrt(9)").unwrap().eval(&mut vars(&[])).unwrap(), 3.0);
-        assert_eq!(Expr::compile("round(2.6)").unwrap().eval(&mut vars(&[])).unwrap(), 3.0);
-        assert_eq!(Expr::compile("floor(2.9)").unwrap().eval(&mut vars(&[])).unwrap(), 2.0);
-        assert_eq!(Expr::compile("ceil(2.1)").unwrap().eval(&mut vars(&[])).unwrap(), 3.0);
-        assert_eq!(Expr::compile("pow(2, 10)").unwrap().eval(&mut vars(&[])).unwrap(), 1024.0);
-        assert_eq!(Expr::compile("avg(2, 4, 6)").unwrap().eval(&mut vars(&[])).unwrap(), 4.0);
+        assert_eq!(
+            Expr::compile("min(3, 2, 5)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            2.0
+        );
+        assert_eq!(
+            Expr::compile("max(3, 2, 5)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            5.0
+        );
+        assert_eq!(
+            Expr::compile("abs(0 - 7)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            7.0
+        );
+        assert_eq!(
+            Expr::compile("sqrt(9)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            3.0
+        );
+        assert_eq!(
+            Expr::compile("round(2.6)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            3.0
+        );
+        assert_eq!(
+            Expr::compile("floor(2.9)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            2.0
+        );
+        assert_eq!(
+            Expr::compile("ceil(2.1)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            3.0
+        );
+        assert_eq!(
+            Expr::compile("pow(2, 10)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            1024.0
+        );
+        assert_eq!(
+            Expr::compile("avg(2, 4, 6)")
+                .unwrap()
+                .eval(&mut vars(&[]))
+                .unwrap(),
+            4.0
+        );
     }
 
     #[test]

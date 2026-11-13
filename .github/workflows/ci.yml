@@ -16,8 +16,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: install udev (serialport dependency)
+      - name: install udev + ssl (serialport and opcua dependencies)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config libssl-dev
       - name: cargo test
         run: cargo test
+        env:
+          RUST_LOG: debug

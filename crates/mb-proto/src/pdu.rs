@@ -15,15 +15,43 @@ pub const FC_READ_WRITE_MULTIPLE_REGISTERS: u8 = 23;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    ReadCoils { addr: u16, qty: u16 },
-    ReadDiscreteInputs { addr: u16, qty: u16 },
-    ReadHoldingRegisters { addr: u16, qty: u16 },
-    ReadInputRegisters { addr: u16, qty: u16 },
-    WriteSingleCoil { addr: u16, on: bool },
-    WriteSingleRegister { addr: u16, value: u16 },
-    WriteMultipleCoils { addr: u16, values: Vec<bool> },
-    WriteMultipleRegisters { addr: u16, values: Vec<u16> },
-    MaskWriteRegister { addr: u16, and_mask: u16, or_mask: u16 },
+    ReadCoils {
+        addr: u16,
+        qty: u16,
+    },
+    ReadDiscreteInputs {
+        addr: u16,
+        qty: u16,
+    },
+    ReadHoldingRegisters {
+        addr: u16,
+        qty: u16,
+    },
+    ReadInputRegisters {
+        addr: u16,
+        qty: u16,
+    },
+    WriteSingleCoil {
+        addr: u16,
+        on: bool,
+    },
+    WriteSingleRegister {
+        addr: u16,
+        value: u16,
+    },
+    WriteMultipleCoils {
+        addr: u16,
+        values: Vec<bool>,
+    },
+    WriteMultipleRegisters {
+        addr: u16,
+        values: Vec<u16>,
+    },
+    MaskWriteRegister {
+        addr: u16,
+        and_mask: u16,
+        or_mask: u16,
+    },
     ReadWriteMultipleRegisters {
         read_addr: u16,
         read_qty: u16,
@@ -115,10 +143,23 @@ impl Request {
 pub enum Response {
     Bits(Vec<bool>),
     Registers(Vec<u16>),
-    Written { addr: u16, qty: u16 },
-    SingleCoil { addr: u16, on: bool },
-    SingleRegister { addr: u16, value: u16 },
-    MaskWritten { addr: u16, and_mask: u16, or_mask: u16 },
+    Written {
+        addr: u16,
+        qty: u16,
+    },
+    SingleCoil {
+        addr: u16,
+        on: bool,
+    },
+    SingleRegister {
+        addr: u16,
+        value: u16,
+    },
+    MaskWritten {
+        addr: u16,
+        and_mask: u16,
+        or_mask: u16,
+    },
 }
 
 /// Decode a response PDU. Exceptions are surfaced as `ProtoError::Exception`.
@@ -201,7 +242,9 @@ pub fn decode_request(pdu: &[u8]) -> Result<Request> {
     let func = *pdu.first().ok_or(ProtoError::Truncated)?;
     let b = &pdu[1..];
     match func {
-        FC_READ_COILS | FC_READ_DISCRETE_INPUTS | FC_READ_HOLDING_REGISTERS
+        FC_READ_COILS
+        | FC_READ_DISCRETE_INPUTS
+        | FC_READ_HOLDING_REGISTERS
         | FC_READ_INPUT_REGISTERS => {
             let addr = be16(b, 0)?;
             let qty = be16(b, 2)?;
@@ -227,10 +270,7 @@ pub fn decode_request(pdu: &[u8]) -> Result<Request> {
             let bytes = b.get(5..5 + bc).ok_or(ProtoError::Truncated)?;
             let mut bits = unpack_bits(bytes);
             bits.truncate(qty);
-            Ok(Request::WriteMultipleCoils {
-                addr,
-                values: bits,
-            })
+            Ok(Request::WriteMultipleCoils { addr, values: bits })
         }
         FC_WRITE_MULTIPLE_REGISTERS => {
             let addr = be16(b, 0)?;
@@ -239,10 +279,7 @@ pub fn decode_request(pdu: &[u8]) -> Result<Request> {
             let bytes = b.get(5..5 + bc).ok_or(ProtoError::Truncated)?;
             let mut vals = bytes_to_regs(bytes);
             vals.truncate(qty);
-            Ok(Request::WriteMultipleRegisters {
-                addr,
-                values: vals,
-            })
+            Ok(Request::WriteMultipleRegisters { addr, values: vals })
         }
         FC_MASK_WRITE_REGISTER => Ok(Request::MaskWriteRegister {
             addr: be16(b, 0)?,
