@@ -108,6 +108,9 @@
       // csv
       csv_only_tauri: "CSV-лог — только в Tauri-сборке", csv_stopped: "CSV-лог остановлен",
       csv_dialog: "Куда писать CSV-лог", csv_cancelled: "csv-лог отменён",
+      mbp_dialog: "Куда сохранить таблицу Modbus Poll", mbp_hint: "Сохранить таблицу как .mbp (Modbus Poll)",
+      mbp_saved_original: "Сохранено: исходный .mbp, байт-точно (правки псевдонимов внесены)",
+      mbp_saved_new: "Сохранено: новый .mbp (файл создан заново, канонический формат)",
       csv_running: "CSV-лог пишется: ",
       // dialogs / actions
       no_tauri: "⚠ Tauri IPC недоступен (window.__TAURI__ не найден) — кнопки не работают",
@@ -287,6 +290,9 @@
       watch_cap_title: "Parameter caption",
       csv_only_tauri: "CSV log — Tauri build only", csv_stopped: "CSV log stopped",
       csv_dialog: "Where to write the CSV log", csv_cancelled: "csv log cancelled",
+      mbp_dialog: "Where to save the Modbus Poll table", mbp_hint: "Save this table as .mbp (Modbus Poll)",
+      mbp_saved_original: "Saved: original .mbp, byte-exact (alias edits applied)",
+      mbp_saved_new: "Saved: new .mbp (generated from the poll, canonical layout)",
       csv_running: "CSV log writing: ",
       no_tauri: "⚠ Tauri IPC unavailable (window.__TAURI__ not found) — buttons won't work",
       err_prefix: "error: ",

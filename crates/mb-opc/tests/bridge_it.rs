@@ -145,9 +145,13 @@ fn bridge_end_to_end() {
             },
         )])
         .default_endpoint("none")
+        .create_sample_keypair(true)
         .client()
         .expect("client config valid");
 
+    let session = client
+        .connect_to_endpoint_id(Some("none"))
+        .expect("client connects to the bridge");
     let session = client
         .connect_to_endpoint_id(Some("none"))
         .expect("client connects to the bridge");
@@ -265,13 +269,16 @@ fn bridge_end_to_end() {
         "both writes good: {statuses:?}"
     );
     // FC16 wrote the u32 12345 (0x00003039) at 20..21; FC5 closed V5.
+    // Word order ABCD: the high word sits at the lower address, so the
+    // value is (h20 << 16) | h21 — the same convention the sim is seeded
+    // with and decode() reads with.
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         pump(&engine, &asp, &nodes);
         let h20 = mb_srv.sim.lock().unwrap().holding[20] as u32;
         let h21 = mb_srv.sim.lock().unwrap().holding[21] as u32;
         let coil5 = mb_srv.sim.lock().unwrap().coils[5];
-        if (h21 << 16) | h20 == 12345 && !coil5 {
+        if (h20 << 16) | h21 == 12345 && !coil5 {
             break;
         }
         assert!(

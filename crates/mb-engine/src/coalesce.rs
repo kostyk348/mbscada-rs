@@ -172,6 +172,7 @@ mod tests {
             notation: String::new(),
             labels: HashMap::new(),
             alarms: HashMap::new(),
+            source: String::new(),
         }
     }
 

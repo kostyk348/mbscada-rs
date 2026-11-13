@@ -492,6 +492,29 @@ fn save_project(path: String, data: String) -> Result<(), String> {
     std::fs::write(&path, data).map_err(|e| e.to_string())
 }
 
+/// Save one poll back as a Modbus Poll `.mbp` file.
+///
+/// Byte-preserving when the poll was imported from a `.mbp` that is still on
+/// disk (only alias markers are rebuilt); a canonical file is generated
+/// otherwise. Returns which path was used so the UI can say so.
+#[tauri::command]
+fn save_poll_mbp(state: State<AppState>, poll_id: u32, path: String) -> Result<String, String> {
+    let poll = {
+        let cfg = state.cfg.lock().unwrap();
+        cfg.polls
+            .iter()
+            .find(|p| p.id == poll_id)
+            .cloned()
+            .ok_or_else(|| "опрос не найден".to_string())?
+    };
+    let out = mb_engine::export::export_poll_mbp_to_file(&poll, std::path::Path::new(&path))?;
+    Ok(if out.from_original {
+        "original".into()
+    } else {
+        "synthetic".into()
+    })
+}
+
 #[tauri::command]
 fn load_project(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
@@ -597,6 +620,7 @@ pub fn run() {
             write_multi,
             save_project,
             load_project,
+            save_poll_mbp,
             csv_log,
             log_lines,
             suggest_paths,

@@ -206,6 +206,10 @@ pub struct Poll {
     /// Alarm spec per protocol address (keys are decimal strings).
     #[serde(default)]
     pub alarms: HashMap<String, AlarmSpec>,
+    /// Path of the `.mbp`/`.mbw` file this poll was imported from, if any.
+    /// Lets "Save as Modbus Poll" keep the original bytes.
+    #[serde(default)]
+    pub source: String,
 }
 
 impl Poll {

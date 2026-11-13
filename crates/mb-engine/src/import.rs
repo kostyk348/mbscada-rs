@@ -140,6 +140,7 @@ pub fn table_to_poll(t: &Table, conn_id: &str, poll_id: u32) -> Poll {
         notation: "raw".into(),
         labels,
         alarms: HashMap::new(),
+        source: t.path.clone(),
     }
 }
 

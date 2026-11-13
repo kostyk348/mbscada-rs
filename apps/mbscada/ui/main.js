@@ -184,6 +184,24 @@ async function csvStop() {
   footer(t("csv_stopped"));
 }
 
+// Save one poll back as a Modbus Poll .mbp file. Byte-preserving when the
+// poll was imported from a .mbp and the original is still on disk.
+async function saveMbp(pid, name) {
+  if (!hasTauri) { footer(t("csv_only_tauri"), true); return; }
+  try {
+    const path = await invoke("plugin:dialog|save", {
+      options: {
+        title: t("mbp_dialog"),
+        defaultPath: `${(name || "poll").replace(/[\\/:*?"<>|]+/g, "_")}.mbp`,
+        filters: [{ name: "Modbus Poll table", extensions: ["mbp"] }],
+      },
+    });
+    if (!path) { footer(t("csv_cancelled")); return; }
+    const how = await invoke("save_poll_mbp", { pollId: pid, path });
+    footer(how === "original" ? t("mbp_saved_original") : t("mbp_saved_new"));
+  } catch (e) { footer(String(e), true); }
+}
+
 async function csvToggle() {
   if (!hasTauri) { footer(t("csv_only_tauri"), true); return; }
   if (csvEnabled()) { await csvStop(); return; }
@@ -1094,6 +1112,13 @@ function buildGrid(grid) {
       updateGridTick(true);
     };
     head.appendChild(ds);
+    // Save as Modbus Poll (.mbp) — byte-preserving for imported tables.
+    const mb = document.createElement("button");
+    mb.className = "fmtsel";
+    mb.textContent = ".mbp ↓";
+    mb.title = t("mbp_hint");
+    mb.onclick = () => saveMbp(p.id, p.name);
+    head.appendChild(mb);
     card.appendChild(head);
 
     const table = document.createElement("table");

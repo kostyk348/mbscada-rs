@@ -145,6 +145,14 @@ mb-opc --project my-plant.json --listen 0.0.0.0:4840
 - Node ids are stable (`ns=1;s=p<poll_id>:<addr>` (the bridge namespace; its index is what `register_namespace` assigns — typically 1)), so clients subscribe by id. Security policy is None/anonymous — keep the bridge on a trusted network.
 - Ships as a standalone binary (`mb-opc-*` in every release) — next to the app or headless on a gateway.
 
+### 💾 Save as Modbus Poll (.mbp, v1.6.0)
+
+Every table card has a `.mbp ↓` button — the table goes back to Modbus Poll:
+
+- **Imported from a `.mbp` and the file is still on disk?** The export is **byte-exact**: the document is re-parsed losslessly, current aliases are edited into their own row markers, and everything else — header, colours, settings blob, v5 IP string — stays byte-for-byte as Modbus Poll wrote it.
+- Otherwise (polls created in the app, or a moved/deleted file) a canonical v4 table is generated: function code, notation-encoded address, aliases, scan period, slave ID.
+- Not stored in the generated file (`.mbp` has no fields for them): scaling (mult/div/offset), units, alarms, computed tags — those live in the app's project JSON.
+
 ### 🤝 Modbus Poll compatibility
 
 - **Import** of `.mbp` (single window) and `.mbw` (workspace with the window list) — one by one or by folder.
@@ -237,17 +245,26 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ Fix: Windows shortcut kept the old icon after an in-place upgrade — the installer now flushes the shell icon cache (SHChangeNotify via an NSIS hook) (v1.5.2)
 - ✅ OPC UA bridge `mb-opc`: serves an mbSCADA project over opc.tcp — every poll row and computed tag as a variable with quality and source timestamps, connection status (online/tx/errors) (v1.6.0)
 - ✅ Poll coalescing: neighbouring polls merge into wider Modbus transactions — fewer round-trips per cycle, protocol-limit aware, grids checked for 32-bit formats (v1.6.0)
-- ✅ OPC UA bridge `mb-opc`: serves an mbSCADA project over opc.tcp — every poll row and computed tag as a variable with quality and source timestamps, connection status (online/tx/errors) (v1.6.0)
-- ✅ Poll coalescing: neighbouring polls merge into wider Modbus transactions — fewer round-trips per cycle, protocol-limit aware, grids checked for 32-bit formats (v1.6.0)
-- ✅ Parameter watch window: floating panel of pinned registers / computed tags — big live values, alarm colours, session min/max, custom captions, jump-to-row (v1.2)
-- ✅ In-app slave simulator: Modbus TCP / RTU-over-TCP device emulation with an editable register grid, typed view and sine/ramp/noise auto-generation (v1.3)
-- ✅ Typed values: quick data-type selector on every table card, typed write modals (float / 32-bit word orders, hex/bin inputs), per-cell dec → hex → bin display (v1.3)
-- ✅ Fix: engine `regs_per_value` ignored f32 word orders — float polls produced wrong rows (v1.3)
-- ✅ UI performance: in-place table/mimic/journal updates instead of full DOM rebuilds — double-clicks no longer torn by the 300 ms re-render (v1.3)
-- ⬜ `.mbp` writer in the UI — «Save as Modbus Poll» (round-trip layer is already engine-side)
+- ✅ Save as Modbus Poll: `.mbp ↓` on every table card — byte-exact for imported tables (only alias markers rebuilt), canonical v4 generation otherwise (v1.6.0)
+- ✅ Fix: OPC UA server now generates its application certificate on first start — some client stacks retried the handshake forever against a cert-less server (v1.6.0)
+- ✅ Fix: e2e write-back assertion rebuilt the u32 in the wrong word order (v1.6.0)
+- ⬜ Dark/light UI theme
+- ⬜ Search box on the live tables (filter rows by label/value)
 - ⬜ Per-row trend window (bigger than a sparkline)
-- ⬜ OPC UA bridge: signed/encrypted endpoints, write-through to Modbus
-- ⬜ OPC UA bridge: signed/encrypted endpoints, write-through to Modbus
+- ⬜ OPC UA bridge: signed/encrypted endpoints (write-through is already in)
+- ⬜ Spike: egui frontend on a branch — evaluate against the Tauri UI, no decision yet
+
+## 💡 Ideas worth building next
+
+A shortlist of what would move the project most (roughly in order):
+
+1. **Trend window per row** — a proper chart with zoom/pan on top of the sparkline ring buffer; the engine already keeps history, only the UI is missing.
+2. **OPC UA security** — Basic256Sha256 endpoints with user/password tokens; the bridge now has a certificate to build on.
+3. **Lua/expr scripting for computed tags** — today the expression engine is read-only math; user-defined functions would open SCADA logic (blocks, counters, hysteresis).
+4. **Alarm history export + archiving to the CSV historian** — alarms exist in the panel but not in the log files.
+5. **Import from hardware** — device scan (FC43/14 device ID) and auto-generation of a poll skeleton from a PLC's address map.
+6. **Headless service mode for the app engine** — `mbscada --service project.json`: the desktop engine and `mb-opc` converge into one daemon with metrics.
+7. **egui spike** — one vertical slice (live table) rebuilt in egui on a `spike/egui` branch to compare memory, latency and packaging; no migration decision until the spike numbers exist.
 
 ## ⁇ FAQ
 

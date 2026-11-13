@@ -54,6 +54,7 @@ fn poll(conn_id: &str) -> Poll {
         notation: String::new(),
         labels,
         alarms,
+        source: String::new(),
     }
 }
 

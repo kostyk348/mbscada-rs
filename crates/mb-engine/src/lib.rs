@@ -9,6 +9,7 @@
 
 pub mod coalesce;
 pub mod engine;
+pub mod export;
 pub mod expr;
 pub mod format;
 pub mod import;
