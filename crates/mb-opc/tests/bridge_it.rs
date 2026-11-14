@@ -145,7 +145,6 @@ fn bridge_end_to_end() {
             },
         )])
         .default_endpoint("none")
-        .create_sample_keypair(true)
         .client()
         .expect("client config valid");
 

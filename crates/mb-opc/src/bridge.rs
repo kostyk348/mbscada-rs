@@ -226,11 +226,6 @@ pub fn build_server_and_space(
     let server = ServerBuilder::new_anonymous("mbSCADA OPC bridge")
         .application_uri(crate::NAMESPACE_URI)
         .product_uri(crate::NAMESPACE_URI)
-        // Generate an application instance certificate on first start (and
-        // reuse it afterwards): clients validate the server's certificate in
-        // CreateSession even on unsecured channels, and a missing one makes
-        // some client stacks retry the handshake forever.
-        .create_sample_keypair(true)
         .host_and_port(host, port)
         .discovery_urls(vec![format!("opc.tcp://{listen}/")])
         .server()
