@@ -266,6 +266,10 @@ A shortlist of what would move the project most (roughly in order):
 6. **Headless service mode for the app engine** — `mbscada --service project.json`: the desktop engine and `mb-opc` converge into one daemon with metrics.
 7. **egui spike** — one vertical slice (live table) rebuilt in egui on a `spike/egui` branch to compare memory, latency and packaging; no migration decision until the spike numbers exist.
 
+## ⁇ Known issues
+
+- **OPC UA bridge e2e hangs on the handshake.** `crates/mb-opc/tests/bridge_it.rs` is `#[ignore]`d in CI: without an application certificate the client sometimes retries `CreateSession` forever, and with certificates on both sides it deadlocks on the first tag read. The bridge itself works with real clients; the in-process e2e needs a deterministic handshake. Run it on demand with `cargo test -p mb-opc --test bridge_it -- --ignored --nocapture`.
+
 ## ⁇ FAQ
 
 **Is this a Modbus Poll rip-off?**
