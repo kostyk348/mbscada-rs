@@ -90,6 +90,21 @@ jobs:
       # The OPC UA bridge is a plain cargo binary — built natively on every
       # release runner and attached to the same release (the tauri-action
       # step above has created it by now).
+      #
+      # Windows gotcha: opcua pulls openssl-src (vendored), and its Configure
+      # script runs `perl`. The runner's MSYS perl lacks Params::Check, so the
+      # OpenSSL build dies inside openssl-sys. Put Strawberry Perl first.
+      - name: Use Strawberry Perl for the vendored OpenSSL build (Windows)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          if (Test-Path 'C:\Strawberry\perl\bin\perl.exe') {
+            "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Strawberry Perl prepended to PATH"
+          } else {
+            Write-Host "::warning::Strawberry Perl not found; openssl-src may fail"
+          }
+
       - name: Upload mb-opc bridge binary
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
