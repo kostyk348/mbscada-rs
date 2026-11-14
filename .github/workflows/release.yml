@@ -140,11 +140,16 @@ jobs:
 
           curl -sSfL -o cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
           chmod +x cosign
-          ./cosign sign-blob --yes \
-            --output-signature SHA256SUMS.txt.sig \
-            --output-certificate SHA256SUMS.txt.pem \
-            SHA256SUMS.txt
-          gh release upload "$TAG" SHA256SUMS.txt.sig SHA256SUMS.txt.pem --clobber \
+          # New cosign releases default to the new bundle format, which rejects
+          # the legacy --output-signature/--output-certificate pair with
+          # "must specify --bundle with --new-bundle-format". One bundle file
+          # carries signature + certificate + timestamp:
+          #   cosign verify-blob --bundle SHA256SUMS.txt.bundle \
+          #     --certificate-identity-regexp '^https://github.com/<owner>/<repo>/' \
+          #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          #     SHA256SUMS.txt
+          ./cosign sign-blob --yes --bundle SHA256SUMS.txt.bundle SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt.bundle --clobber \
             --repo "$GITHUB_REPOSITORY"
 
       - name: GPG signature over the checksums (optional, secret-gated)
