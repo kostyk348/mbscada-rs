@@ -355,6 +355,13 @@
       </aside>
     </main>
 
+    <!-- Проверка обновлений: тихая на старте, баннер — только когда есть новая версия. -->
+    <div id="updbanner" class="updbanner" hidden>
+      <span id="updtext"></span>
+      <button id="btnUpdInstall" class="primary" data-i="upd_install"></button>
+      <button id="btnUpdLater" data-i="upd_later"></button>
+    </div>
+
     <footer id="errbar" class="errbar" data-i="footer_empty">нет соединений — добавьте соединение (TCP или COM) и опрос со своими адресами</footer>
 
     <!-- Floating parameter watch window: pinned registers / computed tags with

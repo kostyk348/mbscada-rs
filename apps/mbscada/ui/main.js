@@ -654,6 +654,42 @@ function tfmt(key, vars) {
 }
 
 /* ------------------------------------------------------------ bootstrap -- */
+// ------------------------------------------------------------------ updater --
+
+function updBannerShow(info) {
+  const b = $("updbanner");
+  if (!b) return;
+  $("updtext").textContent = t("upd_available").replace("{v}", info.version);
+  b.hidden = false;
+}
+
+async function updInstall() {
+  const btn = $("btnUpdInstall");
+  if (btn) { btn.disabled = true; btn.textContent = t("upd_starting"); }
+  try {
+    await invoke("update_install");
+    // Приложение перезапустится само (updater делает relaunch).
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = t("upd_install"); }
+    footer(String(e), true);
+  }
+}
+
+async function updCheck(auto) {
+  if (!hasTauri) return;
+  try {
+    const info = await invoke("update_check");
+    if (info) {
+      updBannerShow(info);
+    } else if (!auto) {
+      footer(t("upd_none"));
+    }
+  } catch (e) {
+    // Сети нет или манифест ещё не выпущен — молчим, если проверка тихая.
+    if (!auto) footer(t("upd_failed").replace("{e}", String(e)), true);
+  }
+}
+
 async function boot() {
   if (!Array.isArray(cfg.computed)) cfg.computed = [];
   if (!cfg.logfile) cfg.logfile = { enabled: false, path: "" };
@@ -680,6 +716,8 @@ async function boot() {
   tourWire();
   setInterval(refresh, 300);
   refresh();
+  // Тихая проверка обновлений на старте: баннер — только если есть новая версия.
+  setTimeout(() => updCheck(true), 2500);
   // Первый запуск без проекта — предлагаем тур один раз.
   try {
     if (hasTauri && !localStorage.getItem("mbscada.tourDone") &&
@@ -2684,6 +2722,11 @@ function tourTick() {
 function tourWire() {
   const bt = $("btnTour");
   if (bt) bt.onclick = () => tourStart(0);
+  // Проверка обновлений (в баннере).
+  const bu = $("btnUpdInstall");
+  if (bu) bu.onclick = updInstall;
+  const bl = $("btnUpdLater");
+  if (bl) bl.onclick = () => { const b = $("updbanner"); if (b) b.hidden = true; };
   const td = $("tourDemo");
   if (td) td.onclick = () => demoProject();
   const tn = $("tourNext");

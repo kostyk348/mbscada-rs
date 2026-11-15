@@ -59,7 +59,7 @@ all in a ~6 MB single executable. No Modbus Poll sources were read, ever.
 
 </details>
 
-## ⬇ Download v1.6.0
+## ⬇ Download v1.7.0
 
 Prebuilt installers for every platform — no Rust toolchain needed.
 Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/latest):
@@ -148,10 +148,18 @@ mb-opc --project my-plant.json --listen 0.0.0.0:4840
 ### 💾 Save as Modbus Poll (.mbp, v1.6.0)
 
 Every table card has a `.mbp ↓` button — the table goes back to Modbus Poll:
-
 - **Imported from a `.mbp` and the file is still on disk?** The export is **byte-exact**: the document is re-parsed losslessly, current aliases are edited into their own row markers, and everything else — header, colours, settings blob, v5 IP string — stays byte-for-byte as Modbus Poll wrote it.
 - Otherwise (polls created in the app, or a moved/deleted file) a canonical v4 table is generated: function code, notation-encoded address, aliases, scan period, slave ID.
 - Not stored in the generated file (`.mbp` has no fields for them): scaling (mult/div/offset), units, alarms, computed tags — those live in the app's project JSON.
+
+### 🔄 Auto-update (v1.7.0)
+
+The app checks for a new release on start (silently — a banner appears only when one exists) and updates with one click:
+
+- Official Tauri updater: manifest `latest.json` in GitHub Releases, every artifact is **minisign-signed** (public key in `tauri.conf.json`, private key in CI secrets). A tampered artifact is rejected, not installed.
+- Nothing installs silently: the banner says `Version {v} is available — install now?`, you decide.
+- Works for installer-based and portable installs; on Linux the updater path is AppImage (`.deb`/`.rpm` users update through the package manager).
+- **Bootstrap**: v1.6.0 was built before the updater existed, so once — manually — install v1.7.0; every later release arrives automatically.
 
 ### 🤝 Modbus Poll compatibility
 
@@ -246,7 +254,9 @@ Launch `mbSCADA`, «Импорт папки…» your `.mbp` folder and hit **С
 - ✅ OPC UA bridge `mb-opc`: serves an mbSCADA project over opc.tcp — every poll row and computed tag as a variable with quality and source timestamps, connection status (online/tx/errors) (v1.6.0)
 - ✅ Poll coalescing: neighbouring polls merge into wider Modbus transactions — fewer round-trips per cycle, protocol-limit aware, grids checked for 32-bit formats (v1.6.0)
 - ✅ Save as Modbus Poll: `.mbp ↓` on every table card — byte-exact for imported tables (only alias markers rebuilt), canonical v4 generation otherwise (v1.6.0)
-- ✅ Fix: OPC UA server now generates its application certificate on first start — some client stacks retried the handshake forever against a cert-less server (v1.6.0)
+- ✅ Auto-update: signed Tauri updater, silent check on start, one-click install (v1.7.0)
+- ✅ Fix: CI got `timeout-minutes: 30` — a hanging e2e can no longer burn the six-hour job limit (v1.6.0)
+- ⚠ Attempted fix, reverted: auto-generating the OPC UA certificate deadlocks the first tag read after a successful session — see «Known issues» (v1.6.0)
 - ✅ Fix: e2e write-back assertion rebuilt the u32 in the wrong word order (v1.6.0)
 - ⬜ Dark/light UI theme
 - ⬜ Search box on the live tables (filter rows by label/value)

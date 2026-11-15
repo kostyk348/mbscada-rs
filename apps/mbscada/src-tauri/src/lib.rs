@@ -11,6 +11,7 @@ use mb_sim::Sim;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Cfg {
@@ -601,10 +602,61 @@ fn import_paths(paths: Vec<String>) -> mb_engine::import::ImportResult {
     mb_engine::import::import_paths(paths)
 }
 
+// ------------------------------------------------------------------ updater --
+// Автообновление: официальный tauri-plugin-updater, манифест latest.json в
+// релизах GitHub, подпись minisign (ключ в секретах CI, публичный в конфиге).
+// Тихая установка не делается: UI показывает баннер, ставит пользователь.
+
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    date: Option<String>,
+    notes: Option<String>,
+}
+
+/// Есть ли обновление: None — актуальны; Some — доступна версия.
+#[tauri::command]
+fn update_check(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let found = tauri::async_runtime::block_on(updater.check());
+    match found {
+        Ok(Some(u)) => Ok(Some(UpdateInfo {
+            version: u.version.clone(),
+            date: u.date.as_ref().map(|d| d.to_string()),
+            notes: u.body.clone(),
+        })),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Скачать и применить обновление; приложение перезапустится само.
+#[tauri::command]
+fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let found = tauri::async_runtime::block_on(async {
+        updater
+            .check()
+            .await
+            .map_err(|e| e.to_string())
+            .map(|o| o)
+    });
+    match found {
+        Ok(Some(u)) => tauri::async_runtime::block_on(async {
+            u.download_and_install(|_, _| {}, || {})
+                .await
+                .map_err(|e| e.to_string())
+        }),
+        Ok(None) => Err("обновление не найдено — версия актуальна".into()),
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .manage(SlaveState::default())
         .invoke_handler(tauri::generate_handler![
@@ -625,6 +677,8 @@ pub fn run() {
             log_lines,
             suggest_paths,
             import_paths,
+            update_check,
+            update_install,
             slave_start,
             slave_stop,
             slave_status,

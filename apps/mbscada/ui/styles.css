@@ -121,6 +121,11 @@ td .spark { display: block; color: var(--accent, #38bdf8); opacity: 0.9; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .2s, color .2s; }
 .errbar.bad { background: #1a0f14; color: #fca5a5; border-color: #7f1d1d; }
 
+/* ---- обновления: баннер над нижней строкой ---- */
+.updbanner { display: flex; gap: 10px; align-items: center; padding: 7px 14px;
+  background: #0b1526; color: #93c5fd; border-top: 1px solid #1e3a5f; font-size: 12.5px; }
+.updbanner span { flex: 1; }
+
 /* scrollbars (webkit) */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
