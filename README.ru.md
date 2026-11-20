@@ -18,6 +18,7 @@
 [![Tauri](https://img.shields.io/badge/Tauri‑2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![Byte‑exact .mbp](https://img.shields.io/badge/.mbp-byte%E2%80%91exact%20round‑trip-0ea5e9)](#-совместимость-с-modbus-poll)
 [![ASCII](https://img.shields.io/badge/modbus‑TCP·RTU·ASCII-success)](#-тур-по-возможностям)
+[![I did my own Modbus Poll](https://idmo.app/badge/mbscada)](https://idmo.app/p/mbscada)
 
 **Русский** · [English](README.md)
 **🌐 Сайт проекта:** [kostyk348.github.io/mbscada-rs](https://kostyk348.github.io/mbscada-rs/)
