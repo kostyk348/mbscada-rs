@@ -11,7 +11,19 @@ and commit dates — nothing is back-filled from memory.
 
 ## [Unreleased]
 
-Nothing since v1.7.0 — `HEAD` is the v1.7.0 tag.
+Nothing since v1.8.0 — `HEAD` is the v1.8.0 tag.
+
+## [1.8.0] — 2026-11-24
+
+### Added
+
+- **Named word bits + bit rules**: 16-bit WORD registers get named bits saved with the
+  project (`cfg.bitNames`), a live bits panel in the rule form with per-bit rule prefill
+  and a batch "rules for every named bit" button, a bit picker with names and
+  set/cleared state in the rule form (`Cond::Bit{set}`), and a live bit-chip strip in
+  the tables grid (`aa3621f`).
+- **UI tests in CI**: pure-JS helpers (`bits.js`) run under `node --test` in a new
+  `ui` job; `main.js`/`bits.js` syntax-checked with `node --check` (`aa3621f`).
 
 ## [1.7.0] — 2026-11-15
 

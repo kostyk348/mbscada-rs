@@ -2002,7 +2002,7 @@ checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "mb-engine"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "mb-format",
  "mb-proto",
@@ -2014,11 +2014,11 @@ dependencies = [
 
 [[package]]
 name = "mb-format"
-version = "1.7.0"
+version = "1.8.0"
 
 [[package]]
 name = "mb-opc"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "mb-engine",
  "mb-sim",
@@ -2029,11 +2029,11 @@ dependencies = [
 
 [[package]]
 name = "mb-proto"
-version = "1.7.0"
+version = "1.8.0"
 
 [[package]]
 name = "mb-sim"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "mb-proto",
  "serialport",
@@ -2041,7 +2041,7 @@ dependencies = [
 
 [[package]]
 name = "mbscada"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "mb-engine",
  "mb-format",
