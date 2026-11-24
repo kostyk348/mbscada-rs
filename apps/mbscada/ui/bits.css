@@ -1,0 +1,74 @@
+/* mbSCADA: styles for the named-bits feature (word rows). */
+/* Полоска подписанных битов в ячейке имени строки таблицы. */
+.bitstrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+}
+.bitstrip .bit {
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid #334155;
+  color: #64748b;
+  background: transparent;
+  cursor: default;
+}
+.bitstrip .bit.on {
+  color: #0f172a;
+  background: #22c55e;
+  border-color: #16a34a;
+}
+
+/* Панель битов слова в форме правил. */
+#bitPanel {
+  border-top: 1px solid #1e293b;
+  margin-top: 8px;
+  padding-top: 6px;
+}
+#bitPanel .bp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.bitpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bprow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bprow .bpn {
+  width: 22px;
+  text-align: right;
+  color: #94a3b8;
+}
+.bpdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  border: 1px solid #334155;
+}
+.bpdot.off { background: transparent; }
+.bpdot.on { background: #22c55e; border-color: #16a34a; }
+.bprow .bpname {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 1px 5px;
+}
+.bprow .bpb {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 6px;
+}

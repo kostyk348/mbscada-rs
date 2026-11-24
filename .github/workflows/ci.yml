@@ -27,3 +27,17 @@ jobs:
         run: cargo test
         env:
           RUST_LOG: debug
+
+  ui:
+    # Pure-JS UI helpers (apps/mbscada/ui/bits.js) — node:test, no build step.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: node --test (bits.js)
+        run: node --test apps/mbscada/ui/bits.test.cjs
+      - name: main.js parses
+        run: node --check apps/mbscada/ui/main.js && node --check apps/mbscada/ui/bits.js
