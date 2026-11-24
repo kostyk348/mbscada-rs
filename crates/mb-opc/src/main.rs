@@ -3,7 +3,10 @@
 use mb_engine::coalesce::merge_polls;
 use mb_engine::model::func_is_read;
 use mb_engine::{Engine, EngineCfg};
-use mb_opc::bridge::{build_server_and_space, pump, NodeKind, Project};
+use mb_opc::bridge::{
+    build_server_and_space, check_port_free, parse_listen, pump, NodeKind, Project,
+};
+use std::io::BufRead as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,24 +37,59 @@ fn main() {
             .position(|a| a == name)
             .and_then(|i| args.get(i + 1).cloned())
     };
-    let project_path = arg("--project").unwrap_or_else(|| {
-        eprintln!("error: --project <project.json> is required (see --help)");
+
+    // Ошибки запуска печатаются в одну строку и ждут Enter: окно консоли после
+    // двойного клика иначе закрывается раньше, чем человек успеет прочитать
+    // причину. В скриптах stdin в EOF — read_line не блокирует, паузы нет.
+    fn die(msg: &str) -> ! {
+        eprintln!("error: {msg}");
+        let mut line = String::new();
+        let _ = std::io::stdin().lock().read_line(&mut line);
         std::process::exit(2);
-    });
+    }
+
+    let project_path = match arg("--project") {
+        Some(p) => p,
+        None => die("--project <project.json> is required (see --help); the project file is what the mbSCADA app saves"),
+    };
     let listen = arg("--listen").unwrap_or_else(|| "0.0.0.0:4840".into());
-    let gap: u16 = arg("--coalesce-gap")
-        .map(|v| v.parse().expect("--coalesce-gap must be a number"))
-        .unwrap_or(0);
+    let (host, port) = match parse_listen(&listen) {
+        Ok(hp) => hp,
+        Err(e) => die(&e),
+    };
+    let gap: u16 = match arg("--coalesce-gap") {
+        Some(v) => match v.parse() {
+            Ok(g) => g,
+            Err(_) => die("--coalesce-gap must be a number"),
+        },
+        None => 0,
+    };
     let coalesce = arg("--no-coalesce").is_none();
-    let snapshot_ms: u64 = arg("--snapshot-ms")
-        .map(|v| v.parse().expect("--snapshot-ms must be a number"))
-        .unwrap_or(500);
+    let snapshot_ms: u64 = match arg("--snapshot-ms") {
+        Some(v) => match v.parse() {
+            Ok(g) => g,
+            Err(_) => die("--snapshot-ms must be a number"),
+        },
+        None => 500,
+    };
     let log_path = arg("--log");
 
-    let raw = std::fs::read_to_string(&project_path)
-        .unwrap_or_else(|e| panic!("cannot read project {project_path}: {e}"));
-    let project: Project = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("cannot parse project {project_path}: {e}"));
+    // Ранний чек порта: opcua при занятом адресе паникует из run() — человек
+    // видит мгновенный вылет без причины. Сообщение печатается с подсказкой
+    // альтернативного порта; сам слушатель чек освобождает сразу.
+    if let Err(e) = check_port_free(&host, port) {
+        let alt = if port == 4840 { 4841 } else { 4840 };
+        die(&format!("{e}; try --listen 0.0.0.0:{alt}"));
+    }
+
+    let raw = match std::fs::read_to_string(&project_path) {
+        Ok(r) => r,
+        Err(e) => die(&format!("cannot read project {project_path}: {e}")),
+    };
+    let project: Project = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(e) => die(&format!("cannot parse project {project_path}: {e}")),
+    };
 
     let readable = |p: &&mb_engine::Poll| p.enabled && func_is_read(p.func);
     let n_before = project.polls.iter().filter(readable).count();

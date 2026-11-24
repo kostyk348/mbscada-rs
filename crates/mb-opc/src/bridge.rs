@@ -211,18 +211,49 @@ fn encode_words(rawf: f64, fmt: Fmt, regs: usize) -> Vec<u16> {
 /// Build the OPC UA server and its address space from the project. Returns
 /// the server (not yet running), the node table for [`pump`] and a handle to
 /// the address space so the caller can pump snapshots from any thread.
+/// Разбор `--listen`: "host:port", голый порт (0.0.0.0) и голый хост (порт 4840).
+/// Ошибка порта возвращается строкой — CLI печатает её по-человечески, а не паникует.
+pub fn parse_listen(listen: &str) -> Result<(String, u16), String> {
+    match listen.rsplit_once(':') {
+        Some((h, p)) => {
+            let port: u16 =
+                p.parse().map_err(|_| format!("--listen: port must be numeric: {}", p))?;
+            Ok((h.to_string(), port))
+        }
+        None => {
+            if let Ok(port) = listen.parse::<u16>() {
+                Ok(("0.0.0.0".into(), port))
+            } else {
+                Ok((listen.to_string(), 4840))
+            }
+        }
+    }
+}
+
+/// Ранний чек адреса: OPC-сервер при занятом порте паникует изнутри `run()`,
+/// человек видит мгновенный вылет без причины. Дешёвый bind-чек до запуска
+/// движка даёт понятное сообщение. Сам слушатель сразу освобождается —
+/// гонка с последующим bind у сервера возможна, но ничтожна.
+pub fn check_port_free(host: &str, port: u16) -> Result<(), String> {
+    use std::net::TcpListener;
+    match TcpListener::bind((host, port)) {
+        Ok(l) => {
+            drop(l);
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(format!(
+            "address {host}:{port} is already in use — another OPC UA server (or another mb-opc) is listening there; pick another port"
+        )),
+        Err(e) => Err(format!("cannot bind {host}:{port}: {e}")),
+    }
+}
+
 pub fn build_server_and_space(
     project: &Project,
     listen: &str,
     engine: &Arc<Engine>,
 ) -> (Server, Vec<NodeRef>, Arc<RwLock<AddressSpace>>, u16) {
-    let (host, port) = match listen.rsplit_once(':') {
-        Some((h, p)) => (
-            h.to_string(),
-            p.parse().expect("--listen port must be numeric"),
-        ),
-        None => (listen.to_string(), 4840),
-    };
+    let (host, port) = parse_listen(listen).expect("listen already validated by the CLI");
     let server = ServerBuilder::new_anonymous("mbSCADA OPC bridge")
         .application_uri(crate::NAMESPACE_URI)
         .product_uri(crate::NAMESPACE_URI)
@@ -448,5 +479,49 @@ pub fn pump(engine: &Engine, asp: &Arc<RwLock<AddressSpace>>, nodes: &[NodeRef])
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod listen_tests {
+    use super::*;
+
+    #[test]
+    fn host_port_parses() {
+        let (h, p) = parse_listen("127.0.0.1:14840").unwrap();
+        assert_eq!((h.as_str(), p), ("127.0.0.1", 14840));
+    }
+
+    #[test]
+    fn bare_port_binds_everywhere() {
+        let (h, p) = parse_listen("14840").unwrap();
+        assert_eq!((h.as_str(), p), ("0.0.0.0", 14840));
+    }
+
+    #[test]
+    fn bare_host_gets_default_port() {
+        let (h, p) = parse_listen("localhost").unwrap();
+        assert_eq!((h.as_str(), p), ("localhost", 4840));
+    }
+
+    #[test]
+    fn bad_port_is_an_error_not_a_panic() {
+        assert!(parse_listen("127.0.0.1:port").is_err());
+    }
+
+    #[test]
+    fn free_port_passes_the_check() {
+        // порт 0 — ОС выдаст свободный; чек обязан пропустить
+        assert!(check_port_free("127.0.0.1", 0).is_ok());
+    }
+
+    #[test]
+    fn occupied_port_is_a_message_not_a_panic() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let err = check_port_free("127.0.0.1", port).unwrap_err();
+        assert!(err.contains("already in use"), "неожиданный текст: {err}");
+        // слушатель теста жив — порт честно занят; отпускаем
+        drop(l);
     }
 }
