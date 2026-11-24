@@ -106,6 +106,8 @@ Grab them from [**Releases**](https://github.com/kostyk348/mbscada-rs/releases/l
 
 <img src="docs/img/slave-en.png" alt="In-app slave simulator: port, framing, editable register grid with typed view and auto-generation" width="60%">
 
+> 📖 **Full app tutorial (RU)**: [`docs/guide-app-ru.md`](docs/guide-app-ru.md) — connections, polls, rules (incl. named word bits), tags, mimic, archive, OPC bridge.
+>
 > 📖 **Full simulator guide (RU)**: [`docs/guide-slave-ru.md`](docs/guide-slave-ru.md) — quick start, connecting masters, data types, dec/hex/bin display, recipes and troubleshooting. An English version is planned.
 
 - **Both sides of the wire in one app.** The new *Slave simulator* tab serves coils / discrete / holding / input registers over Modbus TCP, RTU-over-TCP and, since **v1.4, a physical serial line** (USB-RS485 adapter: port, baud, parity, data/stop bits) — point any master at `localhost:10502`, wire it to an RS-485 bus, or poll it with mbSCADA itself.
