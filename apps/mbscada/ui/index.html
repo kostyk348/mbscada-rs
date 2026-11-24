@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>mbSCADA — Modbus Poll</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="bits.css" />
   </head>
   <body>
     <header class="topbar">
@@ -151,7 +152,13 @@
                 <option value="always" data-i="c_always">всегда (ветка «иначе»)</option>
               </select></label>
               <label><span data-i="f_value">Значение</span> <input id="rValue" type="number" value="0" /></label>
-              <label><span data-i="f_and">И (диапазон / № бита)</span> <input id="rValue2" type="number" value="0" /></label>
+              <label id="rValue2Wrap"><span data-i="f_and">И (диапазон / № бита)</span> <input id="rValue2" type="number" value="0" /></label>
+              <label id="rBitWrap" hidden><span data-i="f_bit">Бит слова</span>
+                <select id="rBitSel"></select>
+                <select id="rBitState">
+                  <option value="1" data-i="bits_set">установлен</option>
+                  <option value="0" data-i="bits_unset">сброшен</option>
+                </select></label>
               <label class="row"><span><span data-i="f_fg">Текст</span> <input id="rFg" type="color" value="#ffffff" /></span><span><span data-i="f_bg">Фон</span> <input id="rBg" type="color" value="#ef4444" /></span></label>
               <label><span data-i="f_level">Уровень</span> <select id="rSeverity">
                 <option value="" data-i="sev_color">только цвет</option>
@@ -167,6 +174,12 @@
                 <button type="button" id="btnRuleCancel" class="mini" data-i="b_cancel" hidden>Отмена</button>
               </div>
               <p class="sub" data-i="rules_hint">Ветки срабатывают по порядку: первая попавшаяся задаёт цвет/текст — как «правило 1 старше правила 2» в Modbus Poll, до 32 веток на регистр. ✎ в списке — правка ветки.</p>
+              <div id="bitPanel" hidden>
+                <h3 class="bp-head"><span data-i="bits_panel">Биты слова (16)</span>
+                  <button type="button" id="btnBitBatch" class="mini" data-i="bits_batch">правила по всем подписанным битам</button></h3>
+                <p class="sub" data-i="bits_hint">Имя бита сохраняется в проекте; состояние — живое, из опроса. «▸ правило» добавляет ветку по этому биту.</p>
+                <div id="bitPanelRows" class="bitpanel"></div>
+              </div>
             </form>
           </details>
         </div>
@@ -422,6 +435,7 @@
     </div>
 
     <script src="i18n.js"></script>
+    <script src="bits.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

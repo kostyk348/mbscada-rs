@@ -1005,7 +1005,7 @@ function renderRuleList() {
     const poll = findCfgPoll(r.poll);
     const addr = poll ? (poll.start || 0) + r.offset * stepOf(poll.fmt) : r.offset;
     const name = poll ? regLabel(poll, addr) : `poll ${r.poll}`;
-    el.insertAdjacentHTML("beforeend", `<span class="grow"><b>№${r._ord}/32 ${esc(name)}</b> <span class="sub">${condText(r.cond)}${r.text ? " · ⌨" + esc(r.text) : ""}${r.severity ? " · ⚠" + r.severity : ""}${r.blink ? " · " + t("blinking") : ""}</span></span>`);
+    el.insertAdjacentHTML("beforeend", `<span class="grow"><b>№${r._ord}/32 ${esc(name)}</b> <span class="sub">${condText(r.cond, bitLabelsOf(cfg, r.poll, r.offset))}${r.text ? " · ⌨" + esc(r.text) : ""}${r.severity ? " · ⚠" + r.severity : ""}${r.blink ? " · " + t("blinking") : ""}</span></span>`);
     el.appendChild(miniBtn("✎", () => editRule(r)));
     el.appendChild(miniBtn("✕", () => {
       if (editingRule === r) endRuleEdit();
@@ -1029,7 +1029,8 @@ function editRule(r) {
     $("rValue2").value = c.hi;
   } else if (kind === "bit") {
     $("rValue").value = 0;
-    $("rValue2").value = c.n;
+    $("rBitSel").value = String(c.n ?? 0);
+    $("rBitState").value = c.set === false ? "0" : "1";
   } else {
     $("rValue").value = c.v;
     $("rValue2").value = 0;
@@ -1044,6 +1045,7 @@ function editRule(r) {
   $("btnRuleCancel").hidden = false;
   const det = $("btnRuleSubmit").closest("details");
   if (det) det.open = true;
+  syncRuleBitsVis();
 }
 
 function endRuleEdit() {
@@ -1064,6 +1066,7 @@ function gridSig() {
   const polls = snap && snap.polls.length ? snap.polls : cfg.polls;
   return JSON.stringify([
     window.LANG,
+    JSON.stringify(cfg.bitNames || {}),
     computed.map((c) => c.name + "\u0001" + c.expr),
     polls.map((p) => [p.id, p.name, p.fmt, p.start, p.qty, p.func,
       (p.rows && p.rows.length ? p.rows : synthRows(p)).map((r) => r.addr)]),
@@ -1181,10 +1184,23 @@ function buildGrid(grid) {
       // ПКМ по значению — цикл dec → hex → bin для этой ячейки.
       tr.children[2].title = t("disp_hint");
       tr.children[2].oncontextmenu = (ev) => { ev.preventDefault(); cycleRowDisp(p.id, r.addr); };
+      // Подписанные биты WORD-строки: полоска чипов в ячейке имени; состояния
+      // красятся каждый тик без перестройки DOM.
+      const labels = bitLabelsOf(cfg, p.id, r.addr);
+      let bitstrip = null;
+      if (labels && isWordFmt(cfgP.fmt)) {
+        bitstrip = document.createElement("div");
+        bitstrip.className = "bitstrip";
+        const ns = Object.keys(labels).map(Number).sort((a, b) => a - b);
+        bitstrip.innerHTML = ns.map((n) => `<span class="bit" data-b="${n}">${esc(labels[n])}</span>`).join("");
+        bitstrip.onclick = (ev) => ev.stopPropagation();      // клик по чипу — не запись в строку
+        bitstrip.oncontextmenu = (ev) => ev.stopPropagation(); // и не цикл dec/hex/bin
+        tr.children[1].appendChild(bitstrip);
+      }
       rec.rows.set(rowKey, tr);
       rec.cells.set(rowKey, {
         val: tr.children[2].firstChild, name: tr.children[1], spark: tr.children[3],
-        q: tr.children[5], al: tr.children[6],
+        q: tr.children[5], al: tr.children[6], bits: bitstrip,
       });
       tb.appendChild(tr);
     }
@@ -1231,6 +1247,17 @@ function updateGridTick() {
       cell.val.textContent = rowDispText(cfgP, r, dispModeOf(p.id, r.addr));
       cell.name.textContent = r.name;
       cell.spark.innerHTML = sparklineSvgOnly(p.id, r);
+      if (cell.bits) {
+        const w = wordValueOf(r);
+        const labels = bitLabelsOf(cfg, p.id, r.addr) || {};
+        for (const sp of cell.bits.children) {
+          const n = Number(sp.dataset.b);
+          const on = bitOf(w, n);
+          sp.classList.toggle("on", on);
+          sp.title = (labels[n] || "") + " = " + (on ? "1" : "0");
+        }
+        cell.bits.title = bitsTitle(w, labels);
+      }
       cell.q.textContent = r.quality;
       cell.q.className = r.quality;
       cell.al.textContent = r.alarm_level && r.alarm_level !== "ok" ? "⚠ " + (r.alarm_msg || r.alarm_level) : "";
@@ -1238,6 +1265,7 @@ function updateGridTick() {
     if (rec.stat) rec.stat.textContent = p.last_poll_ms ? p.last_poll_ms.toFixed(1) + " " + t("ms") : "";
   }
   updateComputedTick();
+  bitPanelTick();
 }
 
 function sparklineSvgOnly(pollId, r) {
@@ -1902,7 +1930,7 @@ function wireForms() {
     const v = Number($("rValue").value);
     let cond;
     if (kind === "in_range" || kind === "outside_range") cond = { kind, lo: v, hi: Number($("rValue2").value) };
-    else if (kind === "bit") cond = { kind, n: Number($("rValue2").value), set: true };
+    else if (kind === "bit") cond = { kind, n: Number($("rBitSel").value), set: $("rBitState").value === "1" };
     else if (kind === "always") cond = { kind };
     else cond = { kind, v };
     const sev = $("rSeverity").value;
@@ -1928,6 +1956,137 @@ function wireForms() {
     }
     apply();
   };
+
+  $("rKind").onchange = () => syncRuleBitsVis();
+  $("rReg").onchange = () => syncRuleBitsVis();
+  const bbtn = $("btnBitBatch");
+  if (bbtn) bbtn.onclick = () => batchBitRules();
+}
+
+/* --------------------------------------------- word bits (named bits) ---- */
+/* 16-битные WORD-регистры получают именованные биты: метки живут в
+   cfg.bitNames["poll:addr"], состояния — живые из опроса. Панель заодно
+   ускоряет заводку правил: префилл ветки по биту и батч по всем подписанным
+   битам (лимит 32 ветки на регистр сохраняется). */
+const BITPANEL = { sig: null, rows: new Map() };
+
+function isWordFmt(fmt) { return fmt === "u16" || fmt === "i16"; }
+
+function ruleSelTarget() {
+  const [pid, addr] = ($("rReg").value || "0:0").split(":").map(Number);
+  const poll = findCfgPoll(pid);
+  if (!poll) return null;
+  return { pid, addr, poll, offset: Math.round((addr - (poll.start || 0)) / stepOf(poll.fmt)) };
+}
+
+function syncRuleBitsVis() {
+  const isBit = $("rKind").value === "bit";
+  $("rBitWrap").hidden = !isBit;
+  $("rValue2Wrap").hidden = isBit;
+  const tgt = ruleSelTarget();
+  const show = !!(tgt && isWordFmt(tgt.poll.fmt));
+  $("bitPanel").hidden = !show;
+  if (show) { fillBitSelect(tgt); refreshBitPanel(); }
+}
+
+function fillBitSelect(tgt) {
+  const sel = $("rBitSel");
+  const labels = bitLabelsOf(cfg, tgt.pid, tgt.addr) || {};
+  const sig = tgt.pid + ":" + tgt.addr + "|" + JSON.stringify(labels);
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  const cur = sel.value;
+  let html = "";
+  for (let n = 15; n >= 0; n--) {
+    html += `<option value="${n}">бит ${n}${labels[n] ? " — " + esc(labels[n]) : ""}</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "0";
+}
+
+function refreshBitPanel() {
+  const tgt = ruleSelTarget();
+  if (!tgt || !isWordFmt(tgt.poll.fmt)) return;
+  const labels = bitLabelsOf(cfg, tgt.pid, tgt.addr) || {};
+  const sig = tgt.pid + ":" + tgt.addr + "|" + window.LANG + "|" + JSON.stringify(labels);
+  if (sig === BITPANEL.sig) { bitPanelTick(); return; }
+  BITPANEL.sig = sig;
+  BITPANEL.rows.clear();
+  const box = $("bitPanelRows");
+  box.innerHTML = "";
+  for (let n = 15; n >= 0; n--) {
+    const row = document.createElement("div");
+    row.className = "bprow";
+    row.innerHTML = `<span class="bpn mono">${n}</span><span class="bpdot off"></span>` +
+      `<input class="bpname" type="text" value="${esc(labels[n] || "")}" placeholder="бит ${n}" />` +
+      `<button type="button" class="mini bpb" title="${esc(t("bits_rule_set"))}">▸1</button>` +
+      `<button type="button" class="mini bpb" title="${esc(t("bits_rule_unset"))}">▸0</button>`;
+    const inp = row.querySelector(".bpname");
+    inp.onchange = () => {
+      setBitLabel(cfg, tgt.pid, tgt.addr, n, inp.value);
+      BITPANEL.sig = null;           // новое имя — перерисовать панель и селектор
+      syncRuleBitsVis();
+      renderRuleList();
+      updateGridTick(true);
+    };
+    const btns = row.querySelectorAll(".bpb");
+    btns[0].onclick = () => bitRulePrefill(n, true);
+    btns[1].onclick = () => bitRulePrefill(n, false);
+    BITPANEL.rows.set(n, { dot: row.querySelector(".bpdot") });
+    box.appendChild(row);
+  }
+  bitPanelTick();
+}
+
+/* Живая часть панели: только точки состояния, DOM не перестраивается. */
+function bitPanelTick() {
+  if ($("bitPanel").hidden) return;
+  const tgt = ruleSelTarget();
+  if (!tgt) return;
+  const m = liveMap();
+  const w = wordValueOf(m[tgt.pid + ":" + tgt.addr]);
+  for (const [n, ref] of BITPANEL.rows) {
+    ref.dot.className = "bpdot " + (bitOf(w, n) ? "on" : "off");
+  }
+}
+
+function bitRulePrefill(n, set) {
+  const tgt = ruleSelTarget();
+  if (!tgt) return;
+  $("rKind").value = "bit";
+  syncRuleBitsVis();
+  $("rBitSel").value = String(n);
+  $("rBitState").value = set ? "1" : "0";
+  const labels = bitLabelsOf(cfg, tgt.pid, tgt.addr) || {};
+  if (labels[n]) $("rMessage").value = labels[n];
+  footer(t("bits_prefill") + n + (set ? " ▸1" : " ▸0"));
+}
+
+/* Батч: по правилу на каждый подписанный бит (установлен, warning, янтарный).
+   Уже существующее правило по этому биту не дублируется; лимит 32 ветки. */
+function batchBitRules() {
+  const tgt = ruleSelTarget();
+  if (!tgt) return;
+  const labels = bitLabelsOf(cfg, tgt.pid, tgt.addr) || {};
+  const ns = Object.keys(labels).map(Number).sort((a, b) => a - b);
+  if (!ns.length) { footer(t("bits_no_labels"), true); return; }
+  let made = 0;
+  for (const n of ns) {
+    const onTarget = cfg.rules.filter((r) => r.poll === tgt.pid && r.offset === tgt.offset);
+    if (onTarget.length >= 32) { footer(t("limit32"), true); break; }
+    if (onTarget.some((r) => r.cond && r.cond.kind === "bit" && r.cond.n === n)) continue;
+    cfg.rules.push({
+      id: (Date.now() % 100000) + made,
+      name: labels[n], poll: tgt.pid, offset: tgt.offset,
+      cond: { kind: "bit", n, set: true },
+      fg: "#ffffff", bg: "#f59e0b", blink: false,
+      severity: "warning", message: labels[n], text: null,
+    });
+    made++;
+  }
+  footer(t("bits_batch_done") + made);
+  renderRuleList();
+  apply();
 }
 
 /* ------------------------------------------------------ slave simulator -- */
@@ -2213,12 +2372,13 @@ function describe(c) {
   if (c.kind === "ascii") return `ASCII ${c.serial.port}${sl}`;
   return (KINDL[c.kind] || c.kind) + sl;
 }
-function condText(c) {
+function condText(c, labels) {
   switch (c.kind) {
     case "gt": return `> ${c.v}`; case "ge": return `≥ ${c.v}`; case "lt": return `< ${c.v}`; case "le": return `≤ ${c.v}`;
     case "eq": return `= ${c.v}`; case "ne": return `≠ ${c.v}`;
     case "in_range": return `${c.lo}..${c.hi}`; case "outside_range": return `вне ${c.lo}..${c.hi}`;
-    case "bit": return `бит ${c.n}`; case "always": return t("c_always");
+    case "bit": return bitCondText(c.n, c.set !== false, labels, t("bits_set"), t("bits_unset"));
+    case "always": return t("c_always");
     default: return c.kind;
   }
 }
@@ -2591,6 +2751,7 @@ function openRuleFor(pollId, addr) {
   const sel = $("rReg");
   const val = `${pollId}:${addr}`;
   if (sel && [...sel.options].some((o) => o.value === val)) sel.value = val;
+  syncRuleBitsVis();
   if (det) det.scrollIntoView({ block: "nearest", behavior: "smooth" });
   footer(t("rule_prefill") + val);
 }
